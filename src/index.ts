@@ -1,75 +1,64 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import chatRouter from './routes/chat.ts';
+import chatRouter from './routes/chat';
+import authRouter from './routes/auth';
 
-// Load environment variables
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
+// ─── Middleware ───────────────────────────────────────────────
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? process.env.FRONTEND_URL 
-    : 'http://localhost:3000',
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true
 }));
-
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Request logging middleware
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
 
-// Routes
-app.use('/api', chatRouter);
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'OK',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
+// ─── Routes ──────────────────────────────────────────────────
+app.get('/health', (_req: Request, res: Response) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Root endpoint
-app.get('/', (req, res) => {
+// Root route
+app.get('/', (_req: Request, res: Response) => {
   res.json({
-    message: 'BDG Backend API',
+    name: 'BoDongGua API',
     version: '1.0.0',
     endpoints: {
-      health: '/health',
-      chat: '/api/chat'
+      health:   'GET  /health',
+      chat:     'POST /api/chat',
+      register: 'POST /api/auth/register',
+      login:    'POST /api/auth/login',
     }
   });
 });
 
-// Error handling middleware
-app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Error:', err);
-  res.status(500).json({
-    success: false,
-    error: 'Internal server error',
-    ...(process.env.NODE_ENV === 'development' && { details: err.message })
-  });
+app.use('/api', chatRouter);       // POST /api/chat
+app.use('/api/auth', authRouter);  // POST /api/auth/register, POST /api/auth/login
+
+// ─── 404 — print attempted path to help debug ────────────────
+app.use((req: Request, res: Response) => {
+  console.warn(`⚠️  404 — no route matched: ${req.method} ${req.url}`);
+  res.status(404).json({ success: false, error: `Route not found: ${req.method} ${req.url}` });
 });
 
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({
-    success: false,
-    error: 'Endpoint not found'
-  });
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  console.error('Unhandled error:', err.message);
+  res.status(500).json({ success: false, error: 'Internal server error' });
 });
 
+// ─── Start ───────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📍 Health check: http://localhost:${PORT}/health`);
-  console.log(`🤖 Chat API: http://localhost:${PORT}/api/chat`);
+  console.log(`🚀 Server:  http://localhost:${PORT}`);
+  console.log(`📊 Health:  http://localhost:${PORT}/health`);
+  console.log(`💬 Chat:    http://localhost:${PORT}/api/chat`);
+  console.log(`🔐 Auth:    http://localhost:${PORT}/api/auth`);
 });
