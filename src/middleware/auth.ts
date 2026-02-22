@@ -9,8 +9,7 @@ declare global {
       user?: {
         userId: string;
         email: string;
-        firstName: string;
-        lastName: string;
+        username: string;
       };
     }
   }
@@ -28,7 +27,7 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string; email: string };
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as { userId: string; email: string };
     
     // Get user from database
     const user = await UserModel.findUserById(decoded.userId);
@@ -43,8 +42,7 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     req.user = {
       userId: user._id!,
       email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName
+      username: user.username
     };
 
     next();
@@ -70,21 +68,20 @@ export const optionalAuth = async (req: Request, res: Response, next: NextFuncti
     const token = authHeader && authHeader.split(' ')[1];
 
     if (token) {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string; email: string };
+      const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as { userId: string; email: string };
       const user = await UserModel.findUserById(decoded.userId);
       
       if (user) {
         req.user = {
           userId: user._id!,
           email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName
+          username: user.username
         };
       }
     }
 
     next();
-  } catch (error) {
+  } catch {
     // Continue without authentication
     next();
   }

@@ -3,20 +3,24 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { UserModel } from '../models/User';
 import { isValidEmail, isValidPassword } from '../utils/validation';
+import { authenticateToken } from '../middleware/auth';
 
 const router = express.Router();
 
 // POST /api/auth/register
 router.post('/register', async (req: Request, res: Response) => {
-  const { email, password, firstName, lastName } = req.body as {
-    email: string; password: string; firstName: string; lastName: string;
+  const { email, password, username } = req.body as {
+    email: string; password: string; username: string;
   };
 
-  if (!email || !password || !firstName || !lastName) {
+  if (!email || !password || !username) {
     return res.status(400).json({ success: false, error: 'All fields are required' });
   }
   if (!isValidEmail(email)) {
     return res.status(400).json({ success: false, error: 'Invalid email format' });
+  }
+  if (username.trim().length < 3) {
+    return res.status(400).json({ success: false, error: 'Username must be at least 3 characters' });
   }
   const pwCheck = isValidPassword(password);
   if (!pwCheck.ok) {
@@ -33,8 +37,7 @@ router.post('/register', async (req: Request, res: Response) => {
     const newUser = await UserModel.createUser({
       email: email.toLowerCase(),
       password: hashed,
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
+      username: username.trim(),
       isEmailVerified: false
     });
 
@@ -84,6 +87,19 @@ router.post('/login', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Login error:', err);
     return res.status(500).json({ success: false, error: 'Login failed' });
+  }
+});
+
+// GET /api/auth/me
+router.get('/me', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const user = await UserModel.findUserById(req.user!.userId);
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+    const { password: _, ...safe } = user;
+    return res.json({ success: true, user: safe });
+  } catch (err) {
+    console.error('Get me error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to get user' });
   }
 });
 
