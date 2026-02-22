@@ -38,6 +38,7 @@ router.post('/register', async (req: Request, res: Response) => {
       email: email.toLowerCase(),
       password: hashed,
       username: username.trim(),
+      character: 'bunny',
       isEmailVerified: false
     });
 
@@ -100,6 +101,29 @@ router.get('/me', authenticateToken, async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Get me error:', err);
     return res.status(500).json({ success: false, error: 'Failed to get user' });
+  }
+});
+
+// PUT /api/auth/character
+router.put('/character', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { character } = req.body as { character: string };
+    const valid = ['bunny', 'cat', 'owl'];
+
+    if (!character || !valid.includes(character)) {
+      return res.status(400).json({ success: false, error: 'Invalid character. Choose bunny, cat or owl.' });
+    }
+
+    await UserModel.updateUser(req.user!.email, { character: character as 'bunny' | 'cat' | 'owl' });
+
+    const updated = await UserModel.findUserById(req.user!.userId);
+    if (!updated) return res.status(404).json({ success: false, error: 'User not found' });
+
+    const { password: _, ...safe } = updated;
+    return res.json({ success: true, user: safe });
+  } catch (err) {
+    console.error('Update character error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update character' });
   }
 });
 

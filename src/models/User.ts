@@ -17,6 +17,7 @@ export interface User {
   email: string;
   password: string;
   username: string;
+  character: 'bunny' | 'cat' | 'owl';
   isEmailVerified: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -34,7 +35,12 @@ export class UserModel {
 
   static async createUser(data: NewUserData): Promise<User> {
     const col = await this.col();
-    const user: User = { ...data, createdAt: new Date(), updatedAt: new Date() };
+    const user: User = {
+      ...data,
+      character: data.character ?? 'bunny',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
     const result = await col.insertOne(user);
     return { ...user, _id: result.insertedId.toString() };
   }
