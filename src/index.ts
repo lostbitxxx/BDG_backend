@@ -41,8 +41,9 @@ app.get('/', (_req: Request, res: Response) => {
   });
 });
 
-app.use('/api', chatRouter);       // POST /api/chat
+// /api/auth MUST be registered before /api to avoid prefix conflict
 app.use('/api/auth', authRouter);  // POST /api/auth/register, POST /api/auth/login
+app.use('/api', chatRouter);       // POST /api/chat
 
 // ─── 404 — print attempted path to help debug ────────────────
 app.use((req: Request, res: Response) => {
@@ -50,12 +51,6 @@ app.use((req: Request, res: Response) => {
   res.status(404).json({ success: false, error: `Route not found: ${req.method} ${req.url}` });
 });
 
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('Unhandled error:', err.message);
-  res.status(500).json({ success: false, error: 'Internal server error' });
-});
-
-// ─── Start ───────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`🚀 Server:  http://localhost:${PORT}`);
   console.log(`📊 Health:  http://localhost:${PORT}/health`);

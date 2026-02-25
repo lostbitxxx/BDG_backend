@@ -5,7 +5,12 @@ let cachedDb: Db | null = null;
 
 async function getDb(): Promise<Db> {
   if (cachedDb) return cachedDb;
-  const client = await MongoClient.connect(process.env.MONGODB_URI as string);
+  const uri = process.env.MONGODB_URI as string;
+  if (!uri) throw new Error('MONGODB_URI is not set');
+  const client = await MongoClient.connect(uri, {
+    serverSelectionTimeoutMS: 10000,
+    connectTimeoutMS: 10000,
+  });
   cachedDb = client.db(process.env.DB_NAME || 'bodongsgua');
   console.log('✅ Connected to MongoDB');
   return cachedDb;

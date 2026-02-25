@@ -7,6 +7,11 @@ import { authenticateToken } from '../middleware/auth';
 
 const router = express.Router();
 
+// GET /api/auth/register — guard against accidental GET requests
+router.get('/register', (_req: Request, res: Response) => {
+  return res.status(405).json({ success: false, error: 'Method not allowed. Use POST /api/auth/register' });
+});
+
 // POST /api/auth/register
 router.post('/register', async (req: Request, res: Response) => {
   const { email, password, username } = req.body as {
@@ -59,6 +64,11 @@ router.post('/register', async (req: Request, res: Response) => {
     console.error('Register error:', err);
     return res.status(500).json({ success: false, error: 'Registration failed' });
   }
+});
+
+// GET /api/auth/login — guard against accidental GET requests
+router.get('/login', (_req: Request, res: Response) => {
+  return res.status(405).json({ success: false, error: 'Method not allowed. Use POST /api/auth/login' });
 });
 
 // POST /api/auth/login
