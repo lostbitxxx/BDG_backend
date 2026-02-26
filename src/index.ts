@@ -1,59 +1,63 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 import chatRouter from './routes/chat';
 import authRouter from './routes/auth';
+import audioRouter from './routes/audio';
+import { setupSocketIO } from './services/socketHandler';
 
 dotenv.config();
 
 const app = express();
+const httpServer = createServer(app);
+
+// Socket.IO setup
+const io = new Server(httpServer, {
+  cors: {
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    methods: ['GET', 'POST'],
+  },
+});
+
 const PORT = process.env.PORT || 3001;
 
-// ─── Middleware ───────────────────────────────────────────────
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true
-}));
+// Middleware
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use((req: Request, _res: Response, next: NextFunction) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-  next();
-});
+// Setup Socket.IO
+setupSocketIO(httpServer);
 
-// ─── Routes ──────────────────────────────────────────────────
+// Routes
+app.use('/api/auth', authRouter);
+app.use('/api/audio', audioRouter);
+app.use('/api', chatRouter);
+
+// Health check
 app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// Root route
-app.get('/', (_req: Request, res: Response) => {
-  res.json({
-    name: 'BoDongGua API',
-    version: '1.0.0',
-    endpoints: {
-      health:   'GET  /health',
-      chat:     'POST /api/chat',
-      register: 'POST /api/auth/register',
-      login:    'POST /api/auth/login',
-    }
+  res.json({ 
+    status: 'ok', 
+    service: 'bdg-backend',
+    timestamp: new Date().toISOString()
   });
 });
 
-// /api/auth MUST be registered before /api to avoid prefix conflict
-app.use('/api/auth', authRouter);  // POST /api/auth/register, POST /api/auth/login
-app.use('/api', chatRouter);       // POST /api/chat
-
-// ─── 404 — print attempted path to help debug ────────────────
-app.use((req: Request, res: Response) => {
-  console.warn(`⚠️  404 — no route matched: ${req.method} ${req.url}`);
-  res.status(404).json({ success: false, error: `Route not found: ${req.method} ${req.url}` });
+// Error handling middleware
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  console.error('Error:', err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server:  http://localhost:${PORT}`);
-  console.log(`📊 Health:  http://localhost:${PORT}/health`);
-  console.log(`💬 Chat:    http://localhost:${PORT}/api/chat`);
-  console.log(`🔐 Auth:    http://localhost:${PORT}/api/auth`);
+// Start server
+httpServer.listen(PORT, () => {
+  console.log(`🚀 Server: http://localhost:${PORT}`);
+  console.log(`📊 Health: http://localhost:${PORT}/health`);
+  console.log(`💬 Chat: http://localhost:${PORT}/api/chat`);
+  console.log(`🔐 Auth: http://localhost:${PORT}/api/auth`);
+  console.log(`🎤 Audio: http://localhost:${PORT}/api/audio`);
 });
+
+export default app;
