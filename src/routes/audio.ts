@@ -26,7 +26,7 @@ interface MulterRequest extends Request {
 }
 
 // Environment variables
-const PYTHON_SERVICE_URL = process.env.PYTHON_SERVICE_URL || 'http://localhost:9401';
+const PYTHON_SERVICE_URL = process.env.PYTHON_SERVICE_URL || 'http://localhost:11000';
 
 // POST /api/audio/upload
 router.post('/upload', upload.single('audio'), async (req: MulterRequest, res: Response) => {
@@ -75,8 +75,10 @@ router.post('/analyze', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'audioUrl is required' });
     }
 
-    console.log('Analyzing audio:', audioUrl);
+    console.log('=== Audio Analysis Request ===');
+    console.log('Audio URL:', audioUrl);
     console.log('Expected text:', expectedText);
+    console.log('Python URL:', PYTHON_SERVICE_URL);
 
     // Call Python service
     const pythonResponse = await axios.post(`${PYTHON_SERVICE_URL}/analyze`, {
@@ -87,9 +89,13 @@ router.post('/analyze', async (req: Request, res: Response) => {
       timeout: 120000, // 2 minute timeout
     });
 
+    console.log('Python response:', JSON.stringify(pythonResponse.data).substring(0, 200));
     return res.json(pythonResponse.data);
   } catch (error: any) {
-    console.error('Analysis error:', error.message);
+    console.error('=== Analysis Error ===');
+    console.error('Error message:', error.message);
+    console.error('Error code:', error.code);
+    console.error('Response data:', error.response?.data);
     
     if (error.code === 'ECONNREFUSED') {
       return res.status(503).json({ 
