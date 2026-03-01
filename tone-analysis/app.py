@@ -1,9 +1,7 @@
 """
 BoDongGua Audio Analysis API
-Using iFlytek ISE (Pronunciation Evaluation) + ASR (Speech-to-Text) API
-Reference: 
-- ISE: https://global.xfyun.cn/doc/voiceservice/ise/API.html
-- ASR: https://global.xfyun.cn/doc/asr/voicedictation/API.html
+Using Faster Whisper for local transcription + tone analysis
+Fixed version with real scoring
 """
 
 from flask import Flask, request, jsonify
@@ -12,21 +10,15 @@ from dotenv import load_dotenv
 import logging
 import os
 import time
-import base64
-import hashlib
-import hmac
-import json
-import ssl
-import websocket
-import threading
 import re
-from datetime import datetime
-from urllib.parse import urlencode
 
 # Load .env file
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 from services.audio_preprocessor import AudioPreprocessor
+from services.whisper_service import WhisperService
+from services.tone_analyzer import ToneAnalyzer
+from services.pinyin_db import get_char_info, analyze_text
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -37,47 +29,27 @@ app = Flask(__name__)
 CORS(app)
 
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
-app.config['TIMEOUT'] = 120
+app.config['TIMEOUT'] = 180
 
-# iFlytek credentials
-IFLYTEK_APP_ID = os.environ.get('IFLYTEK_APP_ID', '')
-IFLYTEK_API_KEY = os.environ.get('IFLYTEK_API_KEY', '')
-IFLYTEK_API_SECRET = os.environ.get('IFLYTEK_API_SECRET', '')
+# Global services
+_whisper_service = None
+_tone_analyzer = None
 
 
-def get_auth_url():
-    """Generate WebSocket authentication URL"""
-    host = 'ise-api-sg.xf-yun.com'
-    path = '/v2/ise'
-    now = datetime.now()
-    date = now.strftime('%a, %d %b %Y %H:%M:%S GMT')
+def get_whisper_service():
+    global _whisper_service
+    if _whisper_service is None:
+        logger.info("Loading Whisper service...")
+        _whisper_service = WhisperService("base")
+    return _whisper_service
 
-    # Create signature origin - include both date and x-date for compatibility
-    signature_origin = f"host: {host}\ndate: {date}\nx-date: {date}\nGET {path} HTTP/1.1"
 
-    signature_sha = hmac.new(
-        IFLYTEK_API_SECRET.encode('utf-8'),
-        signature_origin.encode('utf-8'),
-        digestmod=hashlib.sha256
-    ).digest()
-
-    signature_sha_base64 = base64.b64encode(signature_sha).decode('utf-8')
-
-    authorization_origin = (
-        f'api_key="{IFLYTEK_API_KEY}", algorithm="hmac-sha256", '
-        f'headers="host date x-date request-line", signature="{signature_sha_base64}"'
-    )
-
-    authorization = base64.b64encode(authorization_origin.encode('utf-8')).decode('utf-8')
-
-    params = {
-        'authorization': authorization,
-        'date': date,
-        'x-date': date,
-        'host': host
-    }
-
-    return f"wss://{host}{path}?{urlencode(params)}"
+def get_tone_analyzer():
+    global _tone_analyzer
+    if _tone_analyzer is None:
+        logger.info("Loading Tone Analyzer...")
+        _tone_analyzer = ToneAnalyzer()
+    return _tone_analyzer
 
 
 @app.route('/health', methods=['GET'])
@@ -85,14 +57,14 @@ def health_check():
     return jsonify({
         'status': 'ok',
         'service': 'tone-analysis',
-        'engine': 'iFlytek ISE (Pronunciation Evaluation)',
-        'configured': bool(IFLYTEK_APP_ID and IFLYTEK_API_KEY)
+        'engine': 'Faster Whisper + Tone Analysis (Local)',
+        'whisper_ready': _whisper_service is not None
     })
 
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
-    """Main analysis endpoint using iFlytek ISE + ASR"""
+    """Main analysis endpoint using local Whisper + Tone Analysis"""
     start_time = time.time()
     
     data = request.get_json()
@@ -108,69 +80,148 @@ def analyze():
     
     logger.info(f"Analyzing: {audio_url}")
     logger.info(f"Expected text: {expected_text}")
-    logger.info(f"iFlytek configured: {bool(IFLYTEK_APP_ID)}")
     
     # Preprocess audio
     preprocessor = AudioPreprocessor()
     processed_audio = None
     
     try:
-        logger.info("Step 1: Preprocessing audio...")
+        logger.info("Step 1: Downloading and validating audio...")
         processed_audio = preprocessor.process(audio_url)
         
         if not processed_audio:
-            return jsonify({'success': False, 'error': 'Failed to process audio'}), 400
+            return jsonify({'success': False, 'error': 'Failed to download/process audio'}), 400
         
-        # Determine category based on section
-        if section == 1:
-            category = 'read_syllable'
-        elif section == 2:
-            category = 'read_word'
-        elif section == 4:
-            category = 'read_sentence'
+        # Get audio duration for analysis
+        audio_duration = preprocessor.get_duration(processed_audio)
+        audio_size = os.path.getsize(processed_audio)
+        
+        logger.info(f"Audio duration: {audio_duration}s, size: {audio_size} bytes")
+        
+        # Check if audio is too short or empty
+        if not audio_duration or audio_duration < 0.5:
+            return jsonify({
+                'success': True,
+                'transcription': '',
+                'expected': expected_text,
+                'scores': {
+                    'overall': 0,
+                    'pronunciation': 0,
+                    'tone': 0,
+                    'fluency': 0,
+                    'level': 'Below Level 3',
+                    'grade': 'C',
+                    'pass': False,
+                    'details': {'error': 'Audio too short or empty'}
+                },
+                'feedback': '请录音后再试 (Please record and try again)',
+                'processing_time': round(time.time() - start_time, 2),
+                'engine': 'local'
+            })
+        
+        # Check if audio is likely silence/noise
+        if audio_size < 1000:
+            return jsonify({
+                'success': True,
+                'transcription': '',
+                'expected': expected_text,
+                'scores': {
+                    'overall': 0,
+                    'pronunciation': 0,
+                    'tone': 0,
+                    'fluency': 0,
+                    'level': 'Below Level 3',
+                    'grade': 'C',
+                    'pass': False,
+                    'details': {'error': 'No speech detected - audio too short or silent'}
+                },
+                'feedback': '请录音后再试 (Please record and try again)',
+                'processing_time': round(time.time() - start_time, 2),
+                'engine': 'local'
+            })
+        
+        # Step 2: Transcribe with Whisper
+        logger.info("Step 2: Transcribing with Whisper...")
+        whisper = get_whisper_service()
+        
+        transcription_result = whisper.transcribe(processed_audio, language='zh')
+        
+        transcription = ''
+        if transcription_result.get('success'):
+            transcription = transcription_result.get('text', '').strip()
+            logger.info(f"Transcription: {transcription}")
         else:
-            category = 'read_sentence'
+            logger.warning(f"Whisper transcription failed: {transcription_result.get('error')}")
         
-        transcription = None
-        scores = None
-        engine_used = 'fallback'
+        # Step 3: Analyze pronunciation (text comparison)
+        logger.info("Step 3: Analyzing pronunciation...")
+        pronunciation_score, pronunciation_details = analyze_pronunciation(
+            expected_text, 
+            transcription
+        )
         
-        # Try iFlytek ASR for transcription first
-        if IFLYTEK_APP_ID and IFLYTEK_API_KEY:
-            logger.info("Step 2: Calling iFlytek ASR for transcription...")
-            asr_result = call_iflytek_asr(processed_audio)
-            if asr_result.get('success'):
-                transcription = asr_result.get('transcription', '')
-                logger.info(f"ASR transcription: {transcription}")
+        # Step 4: Analyze tones
+        logger.info("Step 4: Analyzing tones...")
+        tone_score, tone_details = analyze_tones_local(
+            processed_audio, 
+            expected_text
+        )
         
-        # Try iFlytek ISE for scoring
-        if IFLYTEK_APP_ID and IFLYTEK_API_KEY:
-            logger.info(f"Step 3: Calling iFlytek ISE for scoring (category: {category})...")
-            ise_result = call_iflytek_ise(processed_audio, expected_text, category)
-            if ise_result.get('success'):
-                scores = ise_result.get('scores')
-                engine_used = 'iFlytek ISE'
-            else:
-                logger.warning(f"ISE failed: {ise_result.get('error')}, using fallback")
+        # Step 5: Analyze fluency
+        logger.info("Step 5: Analyzing fluency...")
+        fluency_score, fluency_details = analyze_fluency(
+            audio_duration,
+            transcription,
+            expected_text
+        )
         
-        # Use fallback if no scores
-        if not scores:
-            scores = calculate_fallback_scores(processed_audio, expected_text)
-            engine_used = 'fallback'
+        # Calculate overall score
+        overall = (pronunciation_score * 0.4 + tone_score * 0.3 + fluency_score * 0.3)
+        
+        # Determine level
+        if overall >= 97:
+            level, grade = 'Level 1', 'A'
+        elif overall >= 92:
+            level, grade = 'Level 1', 'B'
+        elif overall >= 87:
+            level, grade = 'Level 2', 'A'
+        elif overall >= 80:
+            level, grade = 'Level 2', 'B'
+        elif overall >= 70:
+            level, grade = 'Level 3', 'A'
+        elif overall >= 60:
+            level, grade = 'Level 3', 'B'
+        else:
+            level, grade = 'Below Level 3', 'C'
         
         # Generate feedback
-        feedback = generate_feedback(scores.get('overall', 0), scores.get('level', ''), scores.get('grade', ''))
+        feedback = generate_feedback(overall, level, grade, pronunciation_details, tone_details)
         
         processing_time = round(time.time() - start_time, 2)
         
         return jsonify({
             'success': True,
-            'transcription': transcription or '[Transcription unavailable]',
+            'transcription': transcription or '[未能识别语音]',
             'expected': expected_text,
-            'scores': scores,
+            'scores': {
+                'overall': round(overall, 1),
+                'pronunciation': round(pronunciation_score, 1),
+                'tone': round(tone_score, 1),
+                'fluency': round(fluency_score, 1),
+                'level': level,
+                'grade': grade,
+                'pass': overall >= 60,
+                'details': {
+                    'pronunciation': pronunciation_details,
+                    'tone': tone_details,
+                    'fluency': fluency_details,
+                    'audio_duration': round(audio_duration, 2),
+                    'audio_size': audio_size
+                }
+            },
             'feedback': feedback,
             'processing_time': processing_time,
-            'engine': engine_used
+            'engine': 'local-faster-whisper'
         })
             
     except Exception as e:
@@ -181,457 +232,258 @@ def analyze():
             preprocessor.cleanup()
 
 
-def call_iflytek_asr(audio_path: str) -> dict:
+def analyze_pronunciation(expected: str, actual: str) -> tuple:
     """
-    Call iFlytek ASR (Speech-to-Text) API via WebSocket
-    Reference: https://global.xfyun.cn/doc/asr/voicedictation/API.html
+    Analyze pronunciation by comparing expected vs actual text
+    Returns: (score, details)
     """
-    try:
-        # Read audio file
-        with open(audio_path, 'rb') as f:
-            audio_data = f.read()
-        
-        if len(audio_data) == 0:
-            return {'success': False, 'error': 'Empty audio file'}
-        
-        # Result container
-        result = {'success': False, 'error': None, 'transcription': ''}
-        result_ready = threading.Event()
-        
-        # WebSocket URL for ASR (Singapore server)
-        host = 'iat-api-sg.xf-yun.com'
-        path = '/v2/iat'
-        now = datetime.now()
-        date = now.strftime('%a, %d %b %Y %H:%M:%S GMT')
-        
-        # Use x-date for the signature
-        signature_origin = f"host: {host}\nx-date: {date}\nGET {path} HTTP/1.1"
-        
-        signature_sha = hmac.new(
-            IFLYTEK_API_SECRET.encode('utf-8'),
-            signature_origin.encode('utf-8'),
-            digestmod=hashlib.sha256
-        ).digest()
-        
-        signature_sha_base64 = base64.b64encode(signature_sha).decode('utf-8')
-        
-        authorization_origin = (
-            f'api_key="{IFLYTEK_API_KEY}", algorithm="hmac-sha256", '
-            f'headers="host x-date request-line", signature="{signature_sha_base64}"'
-        )
-        
-        authorization = base64.b64encode(authorization_origin.encode('utf-8')).decode('utf-8')
-        params = {'authorization': authorization, 'x-date': date, 'host': host}
-        ws_url = f"wss://{host}{path}?{urlencode(params)}"
-        
-        def on_message(ws, message):
-            nonlocal result
-            try:
-                data = json.loads(message)
-                
-                code = data.get('code')
-                if code and code != 0:
-                    result['error'] = f"ASR error {code}: {data.get('message', 'Unknown')}"
-                    ws.close()
-                    result_ready.set()
-                    return
-                
-                # Parse result
-                if 'data' in data and 'result' in data['data']:
-                    result_data = data['data']['result']
-                    ws = result_data.get('ws', [])
-                    
-                    # Extract text from word segments
-                    text_parts = []
-                    for w in ws:
-                        cw = w.get('cw', [])
-                        for c in cw:
-                            text_parts.append(c.get('w', ''))
-                    
-                    if text_parts:
-                        result['transcription'] = ''.join(text_parts)
-                        result['success'] = True
-                
-                # Check if done
-                if data.get('data', {}).get('status') == 2:
-                    ws.close()
-                    result_ready.set()
-                    
-            except Exception as e:
-                result['error'] = str(e)
-            finally:
-                if not result_ready.is_set():
-                    ws.close()
-                    result_ready.set()
-        
-        def on_error(ws, error):
-            nonlocal result
-            result['error'] = str(error)
-            result_ready.set()
-        
-        def on_close(ws, close_status_code, close_msg):
-            result_ready.set()
-        
-        def on_open(ws):
-            try:
-                # Send parameters
-                params_msg = {
-                    'common': {'app_id': IFLYTEK_APP_ID},
-                    'business': {
-                        'sub': 'iat',
-                        'ent': 'cn_vip',  # Chinese VIP
-                        'lang': 'zh_cn',
-                        'acc': 'zh_cn',
-                        'tte': 'utf-8',
-                        'aus': 1,
-                        'cmd': 'ssb'
-                    },
-                    'data': {'status': 0, 'format': 'audio/L16;rate=16000', 'audio': '', 'encoding': 'raw'}
-                }
-                ws.send(json.dumps(params_msg))
-                time.sleep(0.1)
-                
-                # Send audio in chunks
-                chunk_size = 1280
-                for i in range(0, len(audio_data), chunk_size):
-                    chunk = audio_data[i:i+chunk_size]
-                    is_last = (i + chunk_size >= len(audio_data))
-                    
-                    aus = 1 if i == 0 else (4 if is_last else 2)
-                    
-                    audio_msg = {
-                        'business': {'aus': aus},
-                        'data': {
-                            'status': 2 if is_last else 1,
-                            'audio': base64.b64encode(chunk).decode('utf-8')
-                        }
-                    }
-                    ws.send(json.dumps(audio_msg))
-                    time.sleep(0.04)
-                    
-            except Exception as e:
-                result['error'] = str(e)
-                ws.close()
-                result_ready.set()
-        
-        # Connect
-        ws = websocket.WebSocketApp(
-            ws_url,
-            on_message=on_message,
-            on_error=on_error,
-            on_close=on_close
-        )
-        ws.on_open = on_open
-        
-        # Run with timeout
-        ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE}, ping_interval=30)
-        
-        # Wait for result
-        result_ready.wait(timeout=30)
-        
-        if not result.get('success') and not result.get('error'):
-            result['error'] = 'Timeout waiting for ASR response'
-        
-        return result
-        
-    except Exception as e:
-        return {'success': False, 'error': str(e)}
-
-
-def call_iflytek_ise(audio_path: str, text: str, category: str) -> dict:
-    """Call iFlytek ISE API via WebSocket"""
-    try:
-        # Read audio file
-        with open(audio_path, 'rb') as f:
-            audio_data = f.read()
-        
-        if len(audio_data) == 0:
-            return {'success': False, 'error': 'Empty audio file'}
-        
-        # Result container
-        result = {'success': False, 'error': None}
-        result_ready = threading.Event()
-        
-        ws_url = get_auth_url()
-        
-        def on_message(ws, message):
-            nonlocal result
-            try:
-                data = json.loads(message)
-                
-                # Check for error
-                code = data.get('code')
-                if code and code != 0:
-                    result['error'] = f"iFlytek error {code}: {data.get('message', 'Unknown')}"
-                    ws.close()
-                    result_ready.set()
-                    return
-                
-                # Check for result
-                if 'data' in data and 'result' in data['data']:
-                    xml_result = data['data']['result'].get('xml_result', '')
-                    
-                    # Parse total_score from XML
-                    import re
-                    score_match = re.search(r'total_score value="([0-9.]+)"', xml_result)
-                    total_score = float(score_match.group(1)) if score_match else 70.0
-                    
-                    # Determine level
-                    if total_score >= 97:
-                        level, grade = 'Level 1', 'A'
-                    elif total_score >= 92:
-                        level, grade = 'Level 1', 'B'
-                    elif total_score >= 87:
-                        level, grade = 'Level 2', 'A'
-                    elif total_score >= 80:
-                        level, grade = 'Level 2', 'B'
-                    elif total_score >= 70:
-                        level, grade = 'Level 3', 'A'
-                    elif total_score >= 60:
-                        level, grade = 'Level 3', 'B'
-                    else:
-                        level, grade = 'Below Level 3', 'C'
-                    
-                    result['success'] = True
-                    result['transcription'] = text
-                    result['scores'] = {
-                        'overall': round(total_score, 1),
-                        'pronunciation': round(total_score * 0.9, 1),
-                        'tone': round(total_score * 0.85, 1),
-                        'fluency': round(total_score * 0.95, 1),
-                        'level': level,
-                        'grade': grade,
-                        'pass': total_score >= 60,
-                        'details': {'xml_result': xml_result[:500] if xml_result else ''}
-                    }
-                    result['feedback'] = generate_feedback(total_score, level, grade)
-                
-            except Exception as e:
-                result['error'] = str(e)
-            finally:
-                ws.close()
-                result_ready.set()
-        
-        def on_error(ws, error):
-            nonlocal result
-            result['error'] = str(error)
-            result_ready.set()
-        
-        def on_close(ws, close_status_code, close_msg):
-            result_ready.set()
-        
-        def on_open(ws):
-            try:
-                # Send parameters (status=0)
-                params_msg = {
-                    'common': {'app_id': IFLYTEK_APP_ID},
-                    'business': {
-                        'sub': 'ise',
-                        'ent': 'cn_vip',
-                        'category': category,
-                        'rstcd': 'utf8',
-                        'ttp_skip': True,
-                        'aus': 1,
-                        'cmd': 'ssb',
-                        'text': '\ufeff' + text,
-                        'tte': 'utf-8'
-                    },
-                    'data': {'status': 0}
-                }
-                ws.send(json.dumps(params_msg))
-                time.sleep(0.1)
-                
-                # Send audio in chunks
-                chunk_size = 1280  # 40ms at 16kHz
-                for i in range(0, len(audio_data), chunk_size):
-                    chunk = audio_data[i:i+chunk_size]
-                    is_last = (i + chunk_size >= len(audio_data))
-                    
-                    aus = 1 if i == 0 else (4 if is_last else 2)
-                    
-                    audio_msg = {
-                        'business': {'cmd': 'auw', 'aus': aus},
-                        'data': {
-                            'status': 2 if is_last else 1,
-                            'audio': base64.b64encode(chunk).decode('utf-8')
-                        }
-                    }
-                    ws.send(json.dumps(audio_msg))
-                    time.sleep(0.04)
-                    
-            except Exception as e:
-                result['error'] = str(e)
-                ws.close()
-                result_ready.set()
-        
-        # Connect
-        ws = websocket.WebSocketApp(
-            ws_url,
-            on_message=on_message,
-            on_error=on_error,
-            on_close=on_close
-        )
-        ws.on_open = on_open
-        
-        # Run with timeout
-        ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE}, ping_interval=30)
-        
-        # Wait for result (timeout 30s)
-        result_ready.wait(timeout=30)
-        
-        if not result.get('success'):
-            if not result.get('error'):
-                result['error'] = 'Timeout waiting for iFlytek response'
-        
-        return result
-        
-    except Exception as e:
-        return {'success': False, 'error': str(e)}
-
-
-def calculate_fallback_scores(audio_path: str, text: str) -> dict:
-    """Fallback scoring when iFlytek is not available - analyzes actual audio"""
-    import subprocess
-    import os
-    import random
+    # Normalize texts - keep only Chinese characters
+    expected_clean = re.sub(r'[^\u4e00-\u9fff]', '', expected)
+    actual_clean = re.sub(r'[^\u4e00-\u9fff]', '', actual.lower())
     
-    # Get audio duration using multiple methods
-    audio_duration = 5.0
-    audio_size = 0
+    if not expected_clean:
+        return 0, {'error': 'No expected text provided'}
     
-    try:
-        # Try ffprobe
-        result = subprocess.run(
-            ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
-             '-of', 'default=noprint_wrappers=1:nokey=1', audio_path],
-            capture_output=True, text=True, timeout=10
-        )
-        if result.stdout.strip() and result.stdout.strip() != 'N/A':
-            audio_duration = float(result.stdout.strip())
-    except:
-        pass
-    
-    # Get file size
-    try:
-        audio_size = os.path.getsize(audio_path)
-    except:
-        pass
-    
-    text_length = len(text) if text else 1
-    
-    # Dynamic scoring based on audio characteristics
-    # If audio file is very small, user probably didn't speak
-    if audio_size < 500:
-        # No audio recorded
-        pronunciation = 10.0
-        tone = 5.0
-        fluency = 5.0
-    elif audio_size < 1000:
-        # Very short - likely noise
-        pronunciation = 25.0
-        tone = 20.0
-        fluency = 20.0
-    elif audio_size < 3000:
-        # Short audio
-        pronunciation = 45.0
-        tone = 40.0
-        fluency = 40.0
-    elif audio_duration < 0.3:
-        # Too short - might be noise
-        pronunciation = 35.0
-        tone = 30.0
-        fluency = 30.0
-    elif audio_duration > 15 and text_length < 3:
-        # Very slow for short text
-        pronunciation = 65.0
-        tone = 60.0
-        fluency = 40.0
-    elif audio_duration > 20:
-        # Way too slow
-        pronunciation = 60.0
-        tone = 55.0
-        fluency = 35.0
-    else:
-        # Normal speech - add randomness to simulate variation
-        base = 65.0
-        pronunciation = min(95, max(45, base + random.uniform(-8, 12)))
-        tone = min(95, max(45, base + random.uniform(-10, 8)))
-        fluency = min(95, max(40, base + random.uniform(-12, 10)))
-    
-    # Adjust based on speaking rate (characters per minute)
-    if audio_duration > 0.1:
-        cpm = (text_length / audio_duration) * 60
-        if 100 <= cpm <= 300:
-            # Good speaking rate
-            fluency = min(95, fluency + 8)
-        elif cpm < 80:
-            # Too slow
-            fluency = max(30, fluency - 15)
-        elif cpm > 400:
-            # Too fast
-            fluency = max(30, fluency - 15)
-    
-    overall = (pronunciation + tone + fluency) / 3
-    
-    # Add more randomness to overall to simulate real analysis
-    overall = min(98, max(5, overall + random.uniform(-3, 3)))
-    
-    # Determine level
-    if overall >= 97:
-        level, grade = 'Level 1', 'A'
-    elif overall >= 92:
-        level, grade = 'Level 1', 'B'
-    elif overall >= 87:
-        level, grade = 'Level 2', 'A'
-    elif overall >= 80:
-        level, grade = 'Level 2', 'B'
-    elif overall >= 70:
-        level, grade = 'Level 3', 'A'
-    elif overall >= 60:
-        level, grade = 'Level 3', 'B'
-    else:
-        level, grade = 'Below Level 3', 'C'
-    
-    scores = {
-        'overall': round(overall, 1),
-        'pronunciation': round(pronunciation, 1),
-        'tone': round(tone, 1),
-        'fluency': round(fluency, 1),
-        'level': level,
-        'grade': grade,
-        'pass': overall >= 60,
-        'details': {
-            'duration': round(audio_duration, 2),
-            'file_size': audio_size,
-            'text_length': text_length,
-            'note': 'Local audio analysis - scores vary based on recording'
+    if not actual_clean:
+        return 10, {
+            'expected': expected_clean,
+            'actual': '',
+            'correct': 0,
+            'total': len(expected_clean),
+            'match_rate': 0,
+            'errors': []
         }
+    
+    # Character-by-character comparison
+    expected_chars = list(expected_clean)
+    actual_chars = list(actual_clean)
+    
+    correct = 0
+    errors = []
+    
+    min_len = min(len(expected_chars), len(actual_chars))
+    
+    for i in range(min_len):
+        if expected_chars[i] == actual_chars[i]:
+            correct += 1
+        else:
+            errors.append({
+                'position': i,
+                'expected': expected_chars[i],
+                'actual': actual_chars[i]
+            })
+    
+    # Handle length differences
+    # If actual is shorter, remaining expected chars are "missing"
+    if len(actual_chars) < len(expected_chars):
+        for i in range(len(actual_chars), len(expected_chars)):
+            errors.append({
+                'position': i,
+                'expected': expected_chars[i],
+                'actual': '[缺失]'
+            })
+    
+    # If actual is longer, extra chars are "wrong"
+    if len(actual_chars) > len(expected_chars):
+        for i in range(len(expected_chars), len(actual_chars)):
+            errors.append({
+                'position': i,
+                'expected': '[多余]',
+                'actual': actual_chars[i]
+            })
+    
+    # Calculate match rate
+    match_rate = (correct / len(expected_chars)) * 100 if expected_chars else 0
+    
+    # Score: if 100% match = 100, decreases proportionally
+    # But apply a penalty for partial matches
+    if match_rate >= 95:
+        score = 100
+    elif match_rate >= 90:
+        score = 90 + (match_rate - 90) * 2  # 90-100
+    elif match_rate >= 70:
+        score = 70 + (match_rate - 70) * 0.75  # 70-90
+    else:
+        score = match_rate * 0.9  # 0-70
+    
+    details = {
+        'expected': expected_clean,
+        'actual': actual_clean,
+        'correct': correct,
+        'total': len(expected_chars),
+        'match_rate': round(match_rate, 1),
+        'errors': errors[:10]  # Limit to first 10 errors
     }
     
-    return scores
+    return round(score, 1), details
 
 
-def generate_feedback(score: float, level: str, grade: str) -> str:
-    """Generate feedback based on score"""
-    if score >= 90:
-        msg = "🌟 Excellent! Your pronunciation is near-native!"
-    elif score >= 80:
-        msg = "✅ Great job! You have good pronunciation."
-    elif score >= 70:
-        msg = "👍 Good effort! Keep practicing to improve."
-    else:
-        msg = "💪 Keep practicing! You'll improve with time."
+def analyze_tones_local(audio_path: str, expected_text: str) -> tuple:
+    """
+    Analyze tones using both text analysis and audio pitch detection
+    Returns: (score, details)
+    """
+    # First, analyze expected tones from text
+    expected_clean = re.sub(r'[^\u4e00-\u9fff]', '', expected_text)
     
-    if level == 'Level 1':
-        msg += " 🏆 Level 1 - You can work in broadcast/media!"
-    elif level == 'Level 2':
-        msg += " 📗 Good for teaching in southern China."
+    if not expected_clean:
+        return 50, {'error': 'No text to analyze'}
+    
+    # Get expected tones from pinyin
+    expected_tones = []
+    char_infos = []
+    
+    for char in expected_clean:
+        info = get_char_info(char)
+        if info:
+            expected_tones.append(info.get('tone', 0))
+            char_infos.append(info)
+    
+    if not expected_tones:
+        # Fallback: no tones could be determined
+        return 70, {'note': 'Could not determine expected tones from text'}
+    
+    # Try to detect actual tones from audio using librosa
+    try:
+        tone_analyzer = get_tone_analyzer()
+        
+        # Convert expected chars to list for tone analyzer
+        chars_list = list(expected_clean)
+        tone_result = tone_analyzer.analyze_tones(audio_path, chars_list)
+        
+        if tone_result.get('success'):
+            detected_tone = tone_result.get('detected_tone', 0)
+            confidence = tone_result.get('confidence', 0)
+            
+            # Compare first tone (simplified)
+            if expected_tones[0] == detected_tone:
+                tone_score = 80 + confidence * 20  # 80-100
+            elif detected_tone == 0:
+                tone_score = 50  # Neutral/unclear
+            else:
+                # Wrong tone - calculate penalty
+                tone_score = max(30, 70 - abs(expected_tones[0] - detected_tone) * 15)
+            
+            return round(tone_score, 1), {
+                'expected_tone': expected_tones[0],
+                'detected_tone': detected_tone,
+                'confidence': round(confidence, 2),
+                'tone_accuracy': tone_result.get('tone_accuracy', 0)
+            }
+    except Exception as e:
+        logger.warning(f"Tone analysis failed: {e}")
+    
+    # Fallback: analyze based on expected text difficulty
+    # Count difficult tones (3rd tone is hardest, retroflex sounds are hard for Cantonese)
+    difficult_count = 0
+    for info in char_infos:
+        if info.get('tone') == 3:
+            difficult_count += 1
+        if info.get('is_retroflex'):
+            difficult_count += 1
+        if info.get('is_nasal'):
+            difficult_count += 0.5
+    
+    # Base score considering difficulty
+    difficulty_factor = min(difficult_count / max(len(char_infos), 1), 1)
+    base_score = 75 - difficulty_factor * 20  # 55-75 range
+    
+    return round(base_score, 1), {
+        'expected_tones': expected_tones[:5],  # First 5
+        'note': 'Estimated - audio analysis unavailable'
+    }
+
+
+def analyze_fluency(audio_duration: float, transcription: str, expected_text: str) -> tuple:
+    """
+    Analyze fluency based on speaking rate
+    Returns: (score, details)
+    """
+    if not transcription:
+        return 5, {'error': 'No transcription'}
+    
+    if not expected_text:
+        return 50, {'error': 'No expected text'}
+    
+    expected_clean = re.sub(r'[^\u4e00-\u9fff]', '', expected_text)
+    actual_clean = re.sub(r'[^\u4e00-\u9fff]', '', transcription)
+    
+    if not expected_clean or not audio_duration:
+        return 50, {'error': 'Missing data'}
+    
+    # Characters per minute
+    cpm = (len(actual_clean) / audio_duration) * 60
+    
+    # Optimal CPM for Mandarin reading is roughly 180-240
+    # Allow some flexibility
+    
+    if cpm < 60:
+        # Too slow
+        score = max(30, 60 - (60 - cpm) * 0.5)
+    elif cpm < 120:
+        # Slow but acceptable
+        score = 60 + (cpm - 60) * 0.3
+    elif cpm <= 280:
+        # Good range
+        score = 78 + min(22, (280 - abs(220 - cpm)) * 0.1)
+    elif cpm <= 360:
+        # Fast but okay
+        score = 80 - (cpm - 280) * 0.15
+    else:
+        # Too fast
+        score = max(40, 70 - (cpm - 360) * 0.1)
+    
+    details = {
+        'cpm': round(cpm, 1),
+        'characters': len(actual_clean),
+        'duration': round(audio_duration, 2),
+        'optimal_range': '180-280 CPM'
+    }
+    
+    return round(score, 1), details
+
+
+def generate_feedback(score: float, level: str, grade: str, 
+                      pronunciation_details: dict, tone_details: dict) -> str:
+    """Generate feedback based on scores"""
+    
+    # Get error info
+    errors = pronunciation_details.get('errors', [])
+    error_count = len(errors)
+    
+    # Basic message
+    if score >= 90:
+        msg = "🌟 非常优秀！你的发音很接近母语水平！"
+    elif score >= 80:
+        msg = "✅ 很好！继续保持！"
+    elif score >= 70:
+        msg = "👍 不错！继续加油！"
+    elif score >= 60:
+        msg = "📝 及格了！需要更多练习。"
+    else:
+        msg = "💪 加油！多听多说会有进步。"
+    
+    # Add specific feedback
+    if error_count > 0:
+        # Get first few errors
+        first_errors = errors[:3]
+        error_chars = [e.get('expected', '') for e in first_errors]
+        if error_chars:
+            msg += f"\n注意这些字的读音: {' '.join(error_chars)}"
+    
+    # Tone feedback
+    if tone_details.get('expected_tone') and tone_details.get('detected_tone'):
+        expected = tone_details.get('expected_tone')
+        detected = tone_details.get('detected_tone')
+        if expected != detected and detected != 0:
+            tone_names = {1: '一声', 2: '二声', 3: '三声', 4: '四声', 0: '轻声'}
+            msg += f"\n声调: 应该是{tone_names.get(expected, '')}, 听到的是{tone_names.get(detected, '')}"
     
     return msg
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 11000))
+    port = int(os.environ.get('PORT', 5000))
     logger.info(f"Starting Tone Analysis Service on port {port}")
-    logger.info(f"Engine: iFlytek ISE (Pronunciation Evaluation)")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    logger.info(f"Engine: Faster Whisper + Tone Analysis (Local)")
+    app.run(host='0.0.0.0', port=port, debug=True)

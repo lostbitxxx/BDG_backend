@@ -26,7 +26,7 @@ interface MulterRequest extends Request {
 }
 
 // Environment variables
-const PYTHON_SERVICE_URL = process.env.PYTHON_SERVICE_URL || 'http://localhost:11000';
+const PYTHON_SERVICE_URL = process.env.PYTHON_SERVICE_URL || 'http://localhost:5000';
 
 // POST /api/audio/upload
 router.post('/upload', upload.single('audio'), async (req: MulterRequest, res: Response) => {
