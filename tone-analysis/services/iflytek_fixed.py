@@ -134,39 +134,43 @@ class IflytekEvaluator:
                     ws.send(json.dumps(d))
                     logger.info("First frame sent")
                     
-                    # Read and send audio chunks
-                    status = 1  # Continue
-                    chunk_num = 0
+                    # Read all audio data
+                    audio_bytes = audio_data
+                    total_len = len(audio_bytes)
                     
-                    while True:
-                        buf = fp.read(frameSize)
+                    # Send in 1280-byte chunks
+                    frameSize = 1280
+                    chunk_num = 0
+                    num_chunks = (total_len + frameSize - 1) // frameSize
+                    
+                    for i in range(0, total_len, frameSize):
+                        chunk = audio_bytes[i:i+frameSize]
+                        is_last = (i + frameSize) >= total_len
                         
-                        if not buf:
-                            # Last frame
-                            logger.info("Sending last frame...")
+                        if is_last:
+                            # Last chunk - send with status 2, aus 4
                             d = {
                                 "business": {"cmd": "auw", "aus": 4, "aue": "raw"},
-                                "data": {"status": 2, "data": str(base64.b64encode(buf if buf else b'').decode())}
+                                "data": {"status": 2, "data": str(base64.b64encode(chunk).decode())}
                             }
-                            ws.send(json.dumps(d))
-                            logger.info("Last frame sent")
-                            time.sleep(1)
-                            break
+                            logger.info(f"Sending last chunk {num_chunks}...")
+                        else:
+                            # Continue chunk - send with status 1, aus 2
+                            chunk_num += 1
+                            d = {
+                                "business": {"cmd": "auw", "aus": 2, "aue": "raw"},
+                                "data": {"status": 1, "data": str(base64.b64encode(chunk).decode())}
+                            }
                         
-                        # Continue frame
-                        chunk_num += 1
-                        d = {
-                            "business": {"cmd": "auw", "aus": 2, "aue": "raw"},
-                            "data": {"status": 1, "data": str(base64.b64encode(buf).decode())}
-                        }
                         ws.send(json.dumps(d))
                         
                         if chunk_num % 10 == 0:
                             logger.info(f"Sent {chunk_num} chunks...")
                         
-                        time.sleep(interval)
+                        time.sleep(0.04)
                     
                     logger.info("All audio sent, closing...")
+                    time.sleep(1)
                     ws.close()
                     
                 except Exception as e:
@@ -209,6 +213,7 @@ class IflytekEvaluator:
             # Reference: https://www.xfyun.cn/document/error-code
             user_messages = {
                 # Audio quality issues (286xx)
+                '28675': 'Audio format error. Please try recording again.',
                 '28676': 'Audio quality is too low. Please speak more clearly and try again.',
                 '28677': 'Too much background noise. Please record in a quieter environment.',
                 '28678': 'Audio is too short. Please speak longer (at least 3 seconds).',
