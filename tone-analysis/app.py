@@ -14,6 +14,7 @@ import struct
 import math
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 from services.audio_preprocessor import AudioPreprocessor
 from services.iflytek_fixed import IflytekEvaluator
@@ -178,7 +179,7 @@ def test_with_generated_audio():
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8001))
+    port = int(os.environ.get('PORT', 8000))
     logger.info(f"Starting on port {port}")
     logger.info("Engine: iFlytek ISE Only (No Fallback)")
     app.run(host='0.0.0.0', port=port, debug=True)
