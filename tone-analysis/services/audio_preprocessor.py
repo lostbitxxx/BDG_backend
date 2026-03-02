@@ -1,152 +1,124 @@
 """
 Audio Preprocessing Service
-Handles audio format conversion, normalization, and validation
+Converts audio to iFlytek required format: PCM 16kHz mono
 """
 
 import os
 import tempfile
-import requests
 import subprocess
-from typing import Optional, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 class AudioPreprocessor:
-    """Audio preprocessing pipeline for Whisper and analysis"""
+    """Audio preprocessing for iFlytek ISE"""
     
-    # Target audio format for Whisper
     TARGET_SAMPLE_RATE = 16000
     TARGET_CHANNELS = 1
     TARGET_FORMAT = "wav"
     
     def __init__(self):
-        self.temp_dir = tempfile.mkdtemp()
+        self.temp_dir = tempfile.mkdtemp(prefix='bodgongua_')
+        self.downloaded_file = None
+        self.converted_file = None
     
-    def validate_audio(self, audio_path: str) -> Tuple[bool, str]:
+    def process(self, audio_url: str) -> str:
         """
-        Validate audio file
-        Returns: (is_valid, error_message)
+        Main processing pipeline:
+        1. Download from S3
+        2. Convert to PCM 16kHz mono
+        3. Return path to processed file
         """
-        if not os.path.exists(audio_path):
-            return False, "Audio file not found"
+        # Step 1: Download
+        logger.info(f"Downloading audio from: {audio_url}")
+        downloaded = self._download_audio(audio_url)
+        if not downloaded:
+            logger.error("Failed to download audio")
+            return None
         
-        # Check file size (max 50MB)
-        file_size = os.path.getsize(audio_path)
-        if file_size > 50 * 1024 * 1024:
-            return False, "Audio file too large (max 50MB)"
+        self.downloaded_file = downloaded
         
-        # Check file extension
-        allowed_extensions = ['.wav', '.mp3', '.webm', '.m4a', '.flac', '.ogg']
-        ext = os.path.splitext(audio_path)[1].lower()
-        if ext not in allowed_extensions:
-            return False, f"Unsupported audio format: {ext}"
+        # Step 2: Convert to PCM 16kHz mono
+        logger.info("Converting to PCM 16kHz mono...")
+        converted = self._convert_audio(downloaded)
+        if not converted:
+            logger.error("Failed to convert audio")
+            return None
         
-        return True, ""
+        self.converted_file = converted
+        
+        # Step 3: Validate
+        if not self._validate_audio(converted):
+            logger.error("Converted audio validation failed")
+            return None
+        
+        logger.info(f"Processed audio: {converted}")
+        return converted
     
-    def get_duration(self, audio_path: str) -> Optional[float]:
-        """Get audio duration in seconds using ffprobe"""
-        try:
-            cmd = [
-                'ffprobe',
-                '-v', 'error',
-                '-show_entries', 'format=duration',
-                '-of', 'default=noprint_wrappers=1:nokey=1',
-                audio_path
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            if result.returncode == 0:
-                return float(result.stdout.strip())
-        except Exception as e:
-            logger.error(f"Error getting duration: {e}")
-        return None
-    
-    def download_from_url(self, url: str) -> Optional[str]:
-        """Download audio from S3 URL to local file"""
+    def _download_audio(self, url: str) -> str:
+        """Download audio from URL (S3 or other)"""
         import boto3
-        from botocore.config import Config
+        import requests
         
-        try:
-            # Check if it's an S3 URL
-            if 's3.' in url or '.s3.' in url:
-                # Parse S3 URL: https://bucket.s3.region.amazonaws.com/key
-                # or: https://bucket.s3.region.amazonaws.com/key?params
-                from urllib.parse import urlparse
+        # Check if S3 URL
+        if 's3.ap-southeast-2.amazonaws.com' in url:
+            # Extract bucket and key
+            # URL format: https://bodonggua-audio.s3.ap-southeast-2.amazonaws.com/audio/e95bfeeb-f196-46e0-87ae-93ee1d093459.webm
+            parts = url.replace('https://', '').split('/')
+            bucket = parts[0].split('.')[0]
+            # Key is everything after the bucket: audio/xxx.webm
+            key = '/'.join(parts[1:])
+            
+            logger.info(f"S3 download: bucket={bucket}, key={key}")
+            
+            try:
+                s3 = boto3.client('s3')
+                temp_file = os.path.join(self.temp_dir, 'input_audio')
                 
-                parsed = urlparse(url)
-                host = parsed.netloc
-                
-                # Extract bucket and region from host
-                # Format: bucket.s3.region.amazonaws.com
-                parts = host.split('.')
-                if 's3' in parts:
-                    bucket_idx = parts.index('s3')
-                    bucket = '.'.join(parts[:bucket_idx])  # Full bucket name
-                    region = parts[bucket_idx + 1] if bucket_idx + 1 < len(parts) else 'ap-southeast-2'
-                else:
-                    bucket = parts[0]
-                    region = 'ap-southeast-2'
-                
-                key = parsed.path.lstrip('/')
-                
-                logger.info(f"S3 download: bucket={bucket}, region={region}, key={key}")
-                
-                # Get AWS credentials from environment
-                aws_access_key = os.environ.get('AWS_ACCESS_KEY_ID', '')
-                aws_secret = os.environ.get('AWS_SECRET_ACCESS_KEY', '')
-                
-                if aws_access_key and aws_secret:
-                    s3_client = boto3.client(
-                        's3',
-                        aws_access_key_id=aws_access_key,
-                        aws_secret_access_key=aws_secret,
-                        region_name=region
-                    )
-                else:
-                    # Use default credentials
-                    s3_client = boto3.client('s3', region_name=region)
-                
-                # Download file
-                ext = os.path.splitext(key)[1] or '.webm'
-                temp_file = os.path.join(self.temp_dir, f"audio{ext}")
-                
-                s3_client.download_file(bucket, key, temp_file)
+                s3.download_file(bucket, key, temp_file)
                 logger.info(f"Downloaded to: {temp_file}")
                 return temp_file
-            else:
-                # Regular URL download
-                response = requests.get(url, timeout=30)
-                if response.status_code == 200:
-                    ext = os.path.splitext(url.split('?')[0])[1] or '.webm'
-                    temp_file = os.path.join(self.temp_dir, f"audio{ext}")
-                    
-                    with open(temp_file, 'wb') as f:
-                        f.write(response.content)
-                    return temp_file
-                
+            except Exception as e:
+                logger.error(f"S3 download error: {e}")
+                return None
+        
+        # Generic download
+        try:
+            temp_file = os.path.join(self.temp_dir, 'input_audio')
+            response = requests.get(url, timeout=30)
+            if response.status_code == 200:
+                with open(temp_file, 'wb') as f:
+                    f.write(response.content)
                 return temp_file
         except Exception as e:
-            logger.error(f"Error downloading audio: {e}")
-        return None
+            logger.error(f"Download error: {e}")
+            return None
     
-    def convert_to_wav(self, input_path: str) -> Optional[str]:
-        """
-        Convert audio to WAV format optimized for Whisper
-        Returns: path to converted file
-        """
-        output_path = os.path.join(self.temp_dir, "converted.wav")
+    def _convert_audio(self, input_file: str) -> str:
+        """Convert audio to PCM 16kHz mono using ffmpeg"""
+        output_file = os.path.join(self.temp_dir, 'processed.wav')
         
         try:
+            # Check if ffmpeg available
+            result = subprocess.run(
+                ['which', 'ffmpeg'],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode != 0:
+                logger.warning("ffmpeg not found, using original file")
+                return input_file
+            
+            # Convert
             cmd = [
                 'ffmpeg',
-                '-y',  # Overwrite output
-                '-i', input_path,
-                '-ar', str(self.TARGET_SAMPLE_RATE),  # Sample rate
-                '-ac', str(self.TARGET_CHANNELS),      # Mono
-                '-acodec', 'pcm_s16le',                # 16-bit PCM
-                '-t', '60',                            # Max 60 seconds
-                output_path
+                '-i', input_file,
+                '-ar', str(self.TARGET_SAMPLE_RATE),
+                '-ac', str(self.TARGET_CHANNELS),
+                '-acodec', 'pcm_s16le',
+                '-y',  # Overwrite
+                output_file
             ]
             
             result = subprocess.run(
@@ -156,111 +128,90 @@ class AudioPreprocessor:
                 timeout=60
             )
             
-            if result.returncode == 0 and os.path.exists(output_path):
-                return output_path
+            if result.returncode == 0 and os.path.exists(output_file):
+                logger.info(f"Converted successfully: {output_file}")
+                return output_file
             else:
-                logger.error(f"FFmpeg error: {result.stderr}")
+                logger.error(f"ffmpeg error: {result.stderr}")
+                return input_file  # Return original if conversion fails
                 
+        except subprocess.TimeoutExpired:
+            logger.error("ffmpeg timeout")
+            return input_file
         except Exception as e:
-            logger.error(f"Error converting audio: {e}")
-        
-        return None
+            logger.error(f"Conversion error: {e}")
+            return input_file
     
-    def normalize_volume(self, input_path: str, target_db: float = -20.0) -> Optional[str]:
-        """Normalize audio volume to target dB"""
-        output_path = os.path.join(self.temp_dir, "normalized.wav")
+    def _validate_audio(self, audio_file: str) -> bool:
+        """Validate audio file"""
+        if not os.path.exists(audio_file):
+            return False
         
+        file_size = os.path.getsize(audio_file)
+        
+        # Minimum: 1000 bytes (~0.03 seconds at 16kHz)
+        if file_size < 1000:
+            logger.error(f"Audio too small: {file_size} bytes")
+            return False
+        
+        # Maximum: 50MB
+        if file_size > 50 * 1024 * 1024:
+            logger.error(f"Audio too large: {file_size} bytes")
+            return False
+        
+        # Check if valid audio
         try:
-            cmd = [
-                'ffmpeg',
-                '-y',
-                '-i', input_path,
-                '-af', f'volume={target_db}dB',
-                output_path
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(
+                ['ffprobe', '-v', 'error', '-show_entries', 
+                 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1',
+                 audio_file],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
             
             if result.returncode == 0:
-                return output_path
+                duration = float(result.stdout.strip())
+                logger.info(f"Audio duration: {duration:.2f}s")
                 
+                # Must be at least 1 second
+                if duration < 1.0:
+                    logger.warning(f"Audio too short: {duration}s")
+                    # Still return true, let iFlytek handle it
+                
+                # Must be less than 60 seconds
+                if duration > 60:
+                    logger.warning(f"Audio too long: {duration}s")
+                    return False
+                    
         except Exception as e:
-            logger.error(f"Error normalizing volume: {e}")
+            logger.warning(f"Could not get duration: {e}")
         
-        return None
+        return True
     
-    def trim_silence(self, input_path: str, threshold_db: float = -40.0) -> Optional[str]:
-        """Trim silence from beginning and end"""
-        output_path = os.path.join(self.temp_dir, "trimmed.wav")
-        
+    def get_duration(self, audio_file: str) -> float:
+        """Get audio duration"""
         try:
-            # silenceremove at beginning and end
-            cmd = [
-                'ffmpeg',
-                '-y',
-                '-i', input_path,
-                '-af', f'silenceremove=start_periods=1:start_duration=0.5:start_threshold={threshold_db}dB:detection=peak,silenceremove=stop_periods=-1:stop_duration=0.5:stop_threshold={threshold_db}dB:detection=peak',
-                output_path
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            
+            result = subprocess.run(
+                ['ffprobe', '-v', 'error', '-show_entries', 
+                 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1',
+                 audio_file],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
             if result.returncode == 0:
-                return output_path
-                
-        except Exception as e:
-            logger.error(f"Error trimming silence: {e}")
-        
+                return float(result.stdout.strip())
+        except:
+            pass
         return None
-    
-    def process(self, audio_url: str) -> Optional[str]:
-        """
-        Full preprocessing pipeline - simplified
-        Just download the file, don't convert (Faster Whisper handles formats)
-        """
-        import uuid
-        
-        logger.info(f"Processing audio from: {audio_url}")
-        
-        # Use a fixed temp directory to avoid cleanup issues
-        self.temp_dir = "/tmp/bodgongua_audio"
-        os.makedirs(self.temp_dir, exist_ok=True)
-        
-        # Step 1: Download
-        local_path = self.download_from_url(audio_url)
-        if not local_path:
-            logger.error("Failed to download audio")
-            return None
-        
-        # Step 2: Validate
-        is_valid, error = self.validate_audio(local_path)
-        if not is_valid:
-            logger.error(f"Audio validation failed: {error}")
-            return None
-        
-        # Step 3: Check duration
-        duration = self.get_duration(local_path)
-        if duration and duration < 1.0:
-            logger.error("Audio too short (less than 1 second)")
-            return None
-        
-        # Skip conversion - use original file (Faster Whisper handles webm/mp3/wav)
-        logger.info(f"Audio file ready: {local_path}")
-        return local_path
     
     def cleanup(self):
         """Clean up temp files"""
         import shutil
         try:
-            shutil.rmtree(self.temp_dir)
+            if os.path.exists(self.temp_dir):
+                shutil.rmtree(self.temp_dir)
+                logger.info(f"Cleaned up: {self.temp_dir}")
         except Exception as e:
-            logger.error(f"Error cleaning up temp files: {e}")
-
-
-def preprocess_audio(audio_url: str) -> Optional[str]:
-    """Convenience function for preprocessing"""
-    preprocessor = AudioPreprocessor()
-    try:
-        return preprocessor.process(audio_url)
-    finally:
-        preprocessor.cleanup()
+            logger.warning(f"Cleanup error: {e}")

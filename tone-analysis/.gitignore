@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Test files with credentials
+test_*.py
+test2.py
+test_auth.py
+test_diagnose.py
+test_final.py
+test_iflytek.py
+test_servers.py
+
+# Environment
+.env
+.env.*
+
+# Logs
+*.log
+
+# OS
+.DS_Store

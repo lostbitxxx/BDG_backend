@@ -26,7 +26,7 @@ interface MulterRequest extends Request {
 }
 
 // Environment variables
-const PYTHON_SERVICE_URL = process.env.PYTHON_SERVICE_URL || 'http://localhost:5000';
+const PYTHON_SERVICE_URL = process.env.PYTHON_SERVICE_URL || 'http://localhost:8000';
 
 // POST /api/audio/upload
 router.post('/upload', upload.single('audio'), async (req: MulterRequest, res: Response) => {
@@ -106,7 +106,8 @@ router.post('/analyze', async (req: Request, res: Response) => {
     
     return res.status(500).json({ 
       success: false, 
-      error: error.response?.data?.error || error.message || 'Analysis failed' 
+      error: error.response?.data?.error || error.message || 'Analysis failed',
+      dev_info: error.response?.data?.dev_info || null
     });
   }
 });
