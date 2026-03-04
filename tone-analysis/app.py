@@ -13,7 +13,7 @@ import time
 import struct
 import math
 
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+# Load only local .env (not parent)
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 from services.audio_preprocessor import AudioPreprocessor
