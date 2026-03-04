@@ -85,7 +85,7 @@ class IflytekEvaluator:
                         xml_b64 = data.get('data', {}).get('data')
                         if xml_b64:
                             xml = base64.b64decode(xml_b64).decode('gbk')
-                            logger.info(f"XML: {xml[:300]}")
+                            logger.info(f"XML (full): {xml}")
                             result = self._parse_xml(xml)
                         result_ready = True
                         ws.close()
@@ -249,8 +249,30 @@ class IflytekEvaluator:
         
         score = float(m.group(1))
         
+        # Extract transcription (recognized speech)
+        # iFlytek ISE returns the recognized text in multiple ways
+        transcription = ""
+        
+        # Try to extract from 'recog' attribute (most common)
+        recog_match = re.search(r'recg="([^"]+)"', xml)
+        if recog_match:
+            transcription = recog_match.group(1)
+        else:
+            # Try 'content' attribute
+            content_match = re.search(r'content="([^"]+)"', xml)
+            if content_match:
+                transcription = content_match.group(1)
+            else:
+                # Try sentence element
+                sentence_match = re.search(r'<sentence[^>]*>([^<]+)</sentence>', xml)
+                if sentence_match:
+                    transcription = sentence_match.group(1)
+        
+        logger.info(f"Extracted transcription: {transcription}")
+        
         return {
             'success': True,
+            'transcription': transcription,
             'scores': {
                 'overall': score,
                 'pronunciation': score,

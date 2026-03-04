@@ -112,11 +112,13 @@ def analyze():
             return jsonify(response), 500
         
         scores = result.get('scores', {})
+        transcription = result.get('transcription', '')
         processing_time = round(time.time() - start_time, 2)
         
         return jsonify({
             'success': True,
             'expected': expected_text,
+            'transcription': transcription,
             'scores': scores,
             'feedback': generate_feedback(scores),
             'processing_time': processing_time,
