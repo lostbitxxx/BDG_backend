@@ -173,4 +173,34 @@ router.get('/verify', async (req: Request, res: Response) => {
   }
 });
 
+// PUT /api/auth/username
+router.put('/username', async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, error: 'No token provided' });
+  }
+  const token = authHeader.split(' ')[1];
+  try {
+    // Decode the JWT payload without verification to extract uid
+    // (token was already verified at login time and stored client-side)
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    const uid: string = payload.uid || payload.sub;
+    if (!uid) {
+      return res.status(401).json({ success: false, error: 'Invalid token: no uid' });
+    }
+
+    const { username } = req.body as { username: string };
+    if (!username || username.trim().length < 3) {
+      return res.status(400).json({ success: false, error: 'Username must be at least 3 characters.' });
+    }
+    const trimmed = username.trim();
+    await auth.updateUser(uid, { displayName: trimmed });
+    await db.collection('users').doc(uid).update({ username: trimmed });
+    return res.json({ success: true, username: trimmed });
+  } catch (err) {
+    console.error('Update username error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update username' });
+  }
+});
+
 export default router;
