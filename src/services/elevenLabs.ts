@@ -18,6 +18,7 @@ const getVoiceId = (gender: 'male' | 'female' = 'female') => {
 interface TTSResponse {
   success: boolean;
   audioUrl?: string;
+  audioBase64?: string;
   error?: string;
 }
 
@@ -55,6 +56,10 @@ export async function textToSpeech(text: string, gender: 'male' | 'female' = 'fe
       }
     );
 
+    // Prepare audio buffer and base64
+    const audioBuffer = Buffer.from(response.data);
+    const audioBase64 = audioBuffer.toString('base64');
+
     // Upload audio to S3
     const audioKey = `tts/${uuidv4()}.mp3`;
     const bucketName = process.env.AWS_BUCKET_NAME || 'bodonggua-audio';
@@ -62,7 +67,7 @@ export async function textToSpeech(text: string, gender: 'male' | 'female' = 'fe
     await s3Client.send(new PutObjectCommand({
       Bucket: bucketName,
       Key: audioKey,
-      Body: Buffer.from(response.data),
+      Body: audioBuffer,
       ContentType: 'audio/mpeg',
     }));
 
@@ -72,7 +77,8 @@ export async function textToSpeech(text: string, gender: 'male' | 'female' = 'fe
     
     return {
       success: true,
-      audioUrl: audioUrl,
+      audioUrl,
+      audioBase64,
     };
   } catch (error: any) {
     console.error('ElevenLabs API error:', error.message);
