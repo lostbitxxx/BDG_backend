@@ -41,10 +41,18 @@ def get_iflytek():
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    iflytek_ready = bool(
-        os.environ.get('IFLYTEK_APP_ID') and 
-        os.environ.get('IFLYTEK_API_KEY') and 
-        os.environ.get('IFLYTEK_API_SECRET')
+    # Debug: check which iFlytek env vars are actually visible
+    app_id_present = bool(os.environ.get('IFLYTEK_APP_ID'))
+    api_key_present = bool(os.environ.get('IFLYTEK_API_KEY'))
+    api_secret_present = bool(os.environ.get('IFLYTEK_API_SECRET'))
+
+    iflytek_ready = bool(app_id_present and api_key_present and api_secret_present)
+
+    logger.info(
+        "Health check – iFlytek env present: APP_ID=%s, API_KEY=%s, API_SECRET=%s",
+        app_id_present,
+        api_key_present,
+        api_secret_present,
     )
     
     return jsonify({
@@ -52,7 +60,12 @@ def health_check():
         'service': 'tone-analysis',
         'engine': 'iFlytek ISE Only (No Fallback)',
         'iflytek_ready': iflytek_ready,
-        'psc_aligned': True
+        'psc_aligned': True,
+        'iflytek_env': {
+            'app_id': app_id_present,
+            'api_key': api_key_present,
+            'api_secret': api_secret_present,
+        }
     })
 
 

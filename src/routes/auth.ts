@@ -1,5 +1,7 @@
 import express, { Request, Response } from 'express';
 import { auth, db } from '../config/firebase';
+import { authenticateToken } from '../middleware/auth';
+import { incrementAffinity, MAX_AFFINITY, MIN_AFFINITY, levelToStage, getAffinityState, xpToLevel } from '../services/affinity';
 
 const router = express.Router();
 
@@ -48,6 +50,9 @@ router.post('/register', async (req: Request, res: Response) => {
       email,
       username: username.trim(),
       character: 'bunny',
+      affinityXp: 0,
+      affinityLevel: 1,
+      affinityStage: levelToStage(1),
       createdAt: new Date().toISOString(),
     });
 
@@ -62,6 +67,9 @@ router.post('/register', async (req: Request, res: Response) => {
         email: userRecord.email,
         username: username.trim(),
         character: 'bunny',
+        affinityXp: 0,
+        affinityLevel: 1,
+        affinityStage: 'stranger',
       },
       token,
     });
@@ -116,6 +124,11 @@ router.post('/login', async (req: Request, res: Response) => {
     // Generate custom token
     const customToken = await auth.createCustomToken(uid);
 
+    const affinityXp = (userData?.affinityXp as number) ?? 0;
+    const affinityLevel =
+      typeof userData?.affinityXp === 'number' ? xpToLevel(affinityXp) : (userData?.affinityLevel ?? 1);
+    const affinityStage = userData?.affinityStage || levelToStage(affinityLevel);
+
     return res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -124,6 +137,9 @@ router.post('/login', async (req: Request, res: Response) => {
         email: userData?.email || email || 'user@example.com',
         username: userData?.username || 'User',
         character: userData?.character || 'bunny',
+        affinityXp,
+        affinityLevel,
+        affinityStage,
       },
       token: customToken,
     });
@@ -158,6 +174,11 @@ router.get('/verify', async (req: Request, res: Response) => {
     const userDoc = await db.collection('users').doc(decodedToken.uid).get();
     const userData = userDoc.exists ? userDoc.data() : null;
 
+    const affinityXp = (userData?.affinityXp as number) ?? 0;
+    const affinityLevel =
+      typeof userData?.affinityXp === 'number' ? xpToLevel(affinityXp) : (userData?.affinityLevel ?? 1);
+    const affinityStage = userData?.affinityStage || levelToStage(affinityLevel);
+
     return res.status(200).json({
       success: true,
       user: {
@@ -165,6 +186,9 @@ router.get('/verify', async (req: Request, res: Response) => {
         email: decodedToken.email,
         username: userData?.username || decodedToken.name || 'User',
         character: userData?.character || 'bunny',
+        affinityXp,
+        affinityLevel,
+        affinityStage,
       },
     });
   } catch (error: any) {
@@ -200,6 +224,67 @@ router.put('/username', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Update username error:', err);
     return res.status(500).json({ success: false, error: 'Failed to update username' });
+  }
+});
+
+// Affinity: XP-based stages (stranger → friend → close_friend → best_friend → soulmate)
+
+// GET /api/auth/affinity — current XP, level, stage, progress to next level
+router.get('/affinity', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const uid = req.user?.uid;
+    if (!uid) return res.status(401).json({ success: false, error: 'Not authenticated' });
+    const state = await getAffinityState(uid);
+    if (!state) return res.status(500).json({ success: false, error: 'Failed to load affinity' });
+    return res.json(state);
+  } catch (err) {
+    console.error('Get affinity error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to load affinity' });
+  }
+});
+
+// POST /api/auth/affinity/increment — increase by 1 after completing a mock test or exercise
+router.post('/affinity/increment', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const uid = req.user?.uid;
+    if (!uid) {
+      return res.status(401).json({ success: false, error: 'Not authenticated' });
+    }
+    const newLevel = await incrementAffinity(uid);
+    if (newLevel == null) {
+      return res.status(500).json({ success: false, error: 'Failed to update affinity' });
+    }
+    return res.json({ success: true, affinityLevel: newLevel });
+  } catch (err) {
+    console.error('Affinity increment error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update affinity level' });
+  }
+});
+
+// PUT /api/auth/affinity
+router.put('/affinity', async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, error: 'No token provided' });
+  }
+  const token = authHeader.split(' ')[1];
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    const uid: string = payload.uid || payload.sub;
+    if (!uid) {
+      return res.status(401).json({ success: false, error: 'Invalid token: no uid' });
+    }
+
+    const { affinityLevel } = req.body as { affinityLevel?: number };
+    if (typeof affinityLevel !== 'number' || !Number.isInteger(affinityLevel)) {
+      return res.status(400).json({ success: false, error: 'affinityLevel must be an integer' });
+    }
+    const level = Math.max(MIN_AFFINITY, Math.min(MAX_AFFINITY, affinityLevel));
+    await db.collection('users').doc(uid).update({ affinityLevel: level });
+    return res.json({ success: true, affinityLevel: level });
+  } catch (err) {
+    console.error('Update affinity error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update affinity level' });
   }
 });
 
