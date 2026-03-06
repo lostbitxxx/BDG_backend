@@ -1,0 +1,177 @@
+[
+  {
+    "id": "c1",
+    "type": "word_judgment",
+    "question": "下列词语中,哪个是普通话规范说法?",
+    "options": ["A. 老鼠", "B. 耗子", "C. 老虫", "D. 物件"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c2",
+    "type": "word_judgment",
+    "question": "下列词语中,哪个是普通话规范说法?",
+    "options": ["A. 自行车", "B. 脚踏车", "C. 单车", "D. 洋车"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c3",
+    "type": "word_judgment",
+    "question": "下列词语中,哪个是普通话规范说法?",
+    "options": ["A. 便宜", "B. 便宜", "C. 抵", "D. 实惠"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c4",
+    "type": "quantifier_noun",
+    "question": "一()书",
+    "options": ["A. 本", "B. 张", "C. 块", "D. 条"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c5",
+    "type": "quantifier_noun",
+    "question": "一()牛",
+    "options": ["A. 头", "B. 条", "C. 只", "D. 匹"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c6",
+    "type": "quantifier_noun",
+    "question": "一()飞机",
+    "options": ["A. 架", "B. 辆", "C. 艘", "D. 辆"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c7",
+    "type": "grammar_judgment",
+    "question": "我比他非常高。(这句话对吗?)",
+    "options": ["A. 对", "B. 不对,应该说'我比他高'", "C. 不对,应该说'我比他很多'", "D. 不对,应该说'我比他较高'"],
+    "correctAnswer": "B"
+  },
+  {
+    "id": "c8",
+    "type": "grammar_judgment",
+    "question": "我昨天去看电影了。(这句话对吗?)",
+    "options": ["A. 对", "B. 不对,应该说'我昨天去看电影了'", "C. 不对,应该说'我昨天去看电影'", "D. 不对,应该说'我昨天去看电影了'"],
+    "correctAnswer": "C"
+  },
+  {
+    "id": "c9",
+    "type": "word_judgment",
+    "question": "下列词语中,哪个是普通话规范说法?",
+    "options": ["A. 哪儿", "B. 哪里", "C. 何处", "D. 哪块"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c10",
+    "type": "word_judgment",
+    "question": "下列词语中,哪个是普通话规范说法?",
+    "options": ["A. 害怕", "B. 怕", "C. 惊", "D. 恐怖"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c11",
+    "type": "quantifier_noun",
+    "question": "一()雨伞",
+    "options": ["A. 把", "B. 顶", "C. 件", "D. 柄"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c12",
+    "type": "quantifier_noun",
+    "question": "一()房子",
+    "options": ["A. 栋", "B. 条", "C. 张", "D. 块"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c13",
+    "type": "grammar_judgment",
+    "question": "他已经来了一个小时了。(这句话对吗?)",
+    "options": ["A. 对", "B. 不对,应该说'他来一个小时了'", "C. 不对,应该说'他已经来一个小时了'", "D. 不对,应该说'他一个小时来了'"],
+    "correctAnswer": "B"
+  },
+  {
+    "id": "c14",
+    "type": "word_judgment",
+    "question": "下列词语中,哪个是普通话规范说法?",
+    "options": ["A. 互联网", "B. 网络", "C. 网", "D. 宽频"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c15",
+    "type": "word_judgment",
+    "question": "下列词语中,哪个是普通话规范说法?",
+    "options": ["A. 公交车", "B. 巴士", "C. 公共汽车", "D. 巴士"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c16",
+    "type": "quantifier_noun",
+    "question": "一()火车",
+    "options": ["A. 列", "B. 辆", "C. 架", "D. 艘"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c17",
+    "type": "grammar_judgment",
+    "question": "这件衣服很漂亮,那件更漂亮。(这句话对吗?)",
+    "options": ["A. 对", "B. 不对,应该说'这件衣服漂亮,那件更漂亮'", "C. 不对,应该说'这件衣服漂亮,那件漂亮'", "D. 不对,应该说'这件衣服漂亮得很'"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c18",
+    "type": "word_judgment",
+    "question": "下列词语中,哪个是普通话规范说法?",
+    "options": ["A. 聊天", "B. 吹水", "C. 倾偈", "D. 讲古"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c19",
+    "type": "word_judgment",
+    "question": "下列词语中,哪个是普通话规范说法?",
+    "options": ["A. 超市", "B. 便利店", "C. 小卖部", "D. 士多"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c20",
+    "type": "quantifier_noun",
+    "question": "一()鱼",
+    "options": ["A. 条", "B. 只", "C. 头", "D. 匹"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c21",
+    "type": "word_judgment",
+    "question": "下列词语中,哪个是普通话规范说法?",
+    "options": ["A. 垃圾", "B. 废物", "C. 杂物", "D. 污物"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c22",
+    "type": "grammar_judgment",
+    "question": "我的朋友是法国人,他会说法语。(这句话对吗?)",
+    "options": ["A. 对", "B. 不对,应该说'我的朋友是法国人,他能说法语'", "C. 不对,应该说'我的朋友是法国人,他会说法语'", "D. 不对,应该说'我的朋友法国人,他说法语'"],
+    "correctAnswer": "C"
+  },
+  {
+    "id": "c23",
+    "type": "word_judgment",
+    "question": "下列词语中,哪个是普通话规范说法?",
+    "options": ["A. 出租屋", "B. 租房", "C. 租屋", "D. 屋租"],
+    "correctAnswer": "B"
+  },
+  {
+    "id": "c24",
+    "type": "word_judgment",
+    "question": "下列词语中,哪个是普通话规范说法?",
+    "options": ["A. 录像机", "B. 录影机", "C. 摄像机", "D. 摄影机"],
+    "correctAnswer": "A"
+  },
+  {
+    "id": "c25",
+    "type": "quantifier_noun",
+    "question": "一()衬衫",
+    "options": ["A. 件", "B. 套", "C. 套", "D. 件"],
+    "correctAnswer": "A"
+  }
+]

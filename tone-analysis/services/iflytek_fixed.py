@@ -247,7 +247,49 @@ class IflytekEvaluator:
         if not m:
             return {'success': False, 'error': 'Cannot parse score'}
         
-        score = float(m.group(1))
+        # Extract individual scores from XML
+        # iFlytek provides: phone_score (pronunciation), fluency_score, tone_score
+        pronunciation_match = re.search(r'phone_score="([0-9.]+)"', xml)
+        fluency_match = re.search(r'fluency_score="([0-9.]+)"', xml)
+        tone_match = re.search(r'tone_score="([0-9.]+)"', xml)
+        
+        pronunciation = float(pronunciation_match.group(1)) if pronunciation_match else float(m.group(1))
+        fluency = float(fluency_match.group(1)) if fluency_match else float(m.group(1))
+        tone = float(tone_match.group(1)) if tone_match else float(m.group(1))
+        
+        # Calculate weighted overall score based on PSC standards
+        # Pronunciation: 40%, Fluency: 30%, Tone: 30%
+        overall_score = round((pronunciation * 0.4) + (fluency * 0.3) + (tone * 0.3), 2)
+        
+        logger.info(f"Individual scores - Pronunciation: {pronunciation}, Fluency: {fluency}, Tone: {tone}")
+        logger.info(f"Calculated overall score (weighted): {overall_score}")
+        
+        # Determine PSC Level and Grade based on official standards
+        # Level 1: 97-100 (First Class - 一级甲等)
+        # Level 2: 87-96.99 (Second Class Grade A - 二级甲等)
+        # Level 3: 80-86.99 (Second Class Grade B - 二级乙等)  
+        # Level 4: 70-79.99 (Third Class - 三级甲等)
+        # Level 5: 60-69.99 (Third Class Grade B - 三级乙等)
+        # Below 60: Below Level 3 (不入级)
+        
+        if overall_score >= 97:
+            level = "Level 1 - 一级甲等 (First Class)"
+            grade = "A"
+        elif overall_score >= 87:
+            level = "Level 2 - 二级甲等 (Second Class, Grade A)"
+            grade = "A"
+        elif overall_score >= 80:
+            level = "Level 2 - 二级乙等 (Second Class, Grade B)"
+            grade = "B"
+        elif overall_score >= 70:
+            level = "Level 3 - 三级甲等 (Third Class, Grade A)"
+            grade = "B"
+        elif overall_score >= 60:
+            level = "Level 3 - 三级乙等 (Third Class, Grade B)"
+            grade = "C"
+        else:
+            level = "Below Level 3 - 不入级 (Not Qualified)"
+            grade = "D"
         
         # Extract transcription (recognized speech)
         # iFlytek ISE returns the recognized text in multiple ways
@@ -274,12 +316,12 @@ class IflytekEvaluator:
             'success': True,
             'transcription': transcription,
             'scores': {
-                'overall': score,
-                'pronunciation': score,
-                'fluency': score,
-                'tone': score,
-                'level': 'Level 1' if score >= 97 else 'Level 2' if score >= 87 else 'Level 3' if score >= 70 else 'Below Level 3',
-                'grade': 'A' if score >= 90 else 'B' if score >= 80 else 'C',
-                'pass': score >= 60
+                'overall': overall_score,
+                'pronunciation': round(pronunciation, 2),
+                'fluency': round(fluency, 2),
+                'tone': round(tone, 2),
+                'level': level,
+                'grade': grade,
+                'pass': overall_score >= 60
             }
         }
