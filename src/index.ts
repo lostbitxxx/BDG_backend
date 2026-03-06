@@ -6,6 +6,8 @@ import { Server } from 'socket.io';
 import chatRouter from './routes/chat';
 import authRouter from './routes/auth';
 import audioRouter from './routes/audio';
+import questionsRouter from './routes/questions';
+import testRouter from './routes/test';
 import { setupSocketIO } from './services/socketHandler';
 
 dotenv.config();
@@ -34,6 +36,8 @@ setupSocketIO(httpServer);
 // Routes
 app.use('/api/auth', authRouter);
 app.use('/api/audio', audioRouter);
+app.use('/api/questions', questionsRouter);
+app.use('/api/test', testRouter);
 app.use('/api', chatRouter);
 
 // Health check

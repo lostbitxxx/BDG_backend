@@ -1,0 +1,402 @@
+[
+  {
+    "content": "一",
+    "pinyin": "yī"
+  },
+  {
+    "content": "二",
+    "pinyin": "èr"
+  },
+  {
+    "content": "三",
+    "pinyin": "sān"
+  },
+  {
+    "content": "四",
+    "pinyin": "sì"
+  },
+  {
+    "content": "五",
+    "pinyin": "wǔ"
+  },
+  {
+    "content": "六",
+    "pinyin": "liù"
+  },
+  {
+    "content": "七",
+    "pinyin": "qī"
+  },
+  {
+    "content": "八",
+    "pinyin": "bā"
+  },
+  {
+    "content": "九",
+    "pinyin": "jiǔ"
+  },
+  {
+    "content": "十",
+    "pinyin": "shí"
+  },
+  {
+    "content": "百",
+    "pinyin": "bǎi"
+  },
+  {
+    "content": "千",
+    "pinyin": "qiān"
+  },
+  {
+    "content": "万",
+    "pinyin": "wàn"
+  },
+  {
+    "content": "亿",
+    "pinyin": "yì"
+  },
+  {
+    "content": "人",
+    "pinyin": "rén"
+  },
+  {
+    "content": "口",
+    "pinyin": "kǒu"
+  },
+  {
+    "content": "手",
+    "pinyin": "shǒu"
+  },
+  {
+    "content": "足",
+    "pinyin": "zú"
+  },
+  {
+    "content": "目",
+    "pinyin": "mù"
+  },
+  {
+    "content": "耳",
+    "pinyin": "ěr"
+  },
+  {
+    "content": "头",
+    "pinyin": "tóu"
+  },
+  {
+    "content": "心",
+    "pinyin": "xīn"
+  },
+  {
+    "content": "天",
+    "pinyin": "tiān"
+  },
+  {
+    "content": "地",
+    "pinyin": "dì"
+  },
+  {
+    "content": "日",
+    "pinyin": "rì"
+  },
+  {
+    "content": "月",
+    "pinyin": "yuè"
+  },
+  {
+    "content": "星",
+    "pinyin": "xīng"
+  },
+  {
+    "content": "水",
+    "pinyin": "shuǐ"
+  },
+  {
+    "content": "火",
+    "pinyin": "huǒ"
+  },
+  {
+    "content": "山",
+    "pinyin": "shān"
+  },
+  {
+    "content": "石",
+    "pinyin": "shí"
+  },
+  {
+    "content": "木",
+    "pinyin": "mù"
+  },
+  {
+    "content": "土",
+    "pinyin": "tǔ"
+  },
+  {
+    "content": "金",
+    "pinyin": "jīn"
+  },
+  {
+    "content": "玉",
+    "pinyin": "yù"
+  },
+  {
+    "content": "竹",
+    "pinyin": "zhú"
+  },
+  {
+    "content": "米",
+    "pinyin": "mǐ"
+  },
+  {
+    "content": "谷",
+    "pinyin": "gǔ"
+  },
+  {
+    "content": "茶",
+    "pinyin": "chá"
+  },
+  {
+    "content": "中",
+    "pinyin": "zhōng"
+  },
+  {
+    "content": "国",
+    "pinyin": "guó"
+  },
+  {
+    "content": "学",
+    "pinyin": "xué"
+  },
+  {
+    "content": "习",
+    "pinyin": "xí"
+  },
+  {
+    "content": "工",
+    "pinyin": "gōng"
+  },
+  {
+    "content": "作",
+    "pinyin": "zuò"
+  },
+  {
+    "content": "生",
+    "pinyin": "shēng"
+  },
+  {
+    "content": "活",
+    "pinyin": "huó"
+  },
+  {
+    "content": "时",
+    "pinyin": "shí"
+  },
+  {
+    "content": "间",
+    "pinyin": "jiān"
+  },
+  {
+    "content": "朋",
+    "pinyin": "péng"
+  },
+  {
+    "content": "友",
+    "pinyin": "yǒu"
+  },
+  {
+    "content": "家",
+    "pinyin": "jiā"
+  },
+  {
+    "content": "庭",
+    "pinyin": "tíng"
+  },
+  {
+    "content": "老",
+    "pinyin": "lǎo"
+  },
+  {
+    "content": "师",
+    "pinyin": "shī"
+  },
+  {
+    "content": "校",
+    "pinyin": "xiào"
+  },
+  {
+    "content": "春",
+    "pinyin": "chūn"
+  },
+  {
+    "content": "夏",
+    "pinyin": "xià"
+  },
+  {
+    "content": "秋",
+    "pinyin": "qiū"
+  },
+  {
+    "content": "冬",
+    "pinyin": "dōng"
+  },
+  {
+    "content": "东",
+    "pinyin": "dōng"
+  },
+  {
+    "content": "西",
+    "pinyin": "xī"
+  },
+  {
+    "content": "南",
+    "pinyin": "nán"
+  },
+  {
+    "content": "北",
+    "pinyin": "běi"
+  },
+  {
+    "content": "上",
+    "pinyin": "shàng"
+  },
+  {
+    "content": "下",
+    "pinyin": "xià"
+  },
+  {
+    "content": "左",
+    "pinyin": "zuǒ"
+  },
+  {
+    "content": "右",
+    "pinyin": "yòu"
+  },
+  {
+    "content": "前",
+    "pinyin": "qián"
+  },
+  {
+    "content": "后",
+    "pinyin": "hòu"
+  },
+  {
+    "content": "里",
+    "pinyin": "lǐ"
+  },
+  {
+    "content": "外",
+    "pinyin": "wài"
+  },
+  {
+    "content": "大",
+    "pinyin": "dà"
+  },
+  {
+    "content": "小",
+    "pinyin": "xiǎo"
+  },
+  {
+    "content": "高",
+    "pinyin": "gāo"
+  },
+  {
+    "content": "低",
+    "pinyin": "dī"
+  },
+  {
+    "content": "长",
+    "pinyin": "cháng"
+  },
+  {
+    "content": "短",
+    "pinyin": "duǎn"
+  },
+  {
+    "content": "好",
+    "pinyin": "hǎo"
+  },
+  {
+    "content": "坏",
+    "pinyin": "huài"
+  },
+  {
+    "content": "多",
+    "pinyin": "duō"
+  },
+  {
+    "content": "少",
+    "pinyin": "shǎo"
+  },
+  {
+    "content": "新",
+    "pinyin": "xīn"
+  },
+  {
+    "content": "旧",
+    "pinyin": "jiù"
+  },
+  {
+    "content": "快",
+    "pinyin": "kuài"
+  },
+  {
+    "content": "慢",
+    "pinyin": "màn"
+  },
+  {
+    "content": "难",
+    "pinyin": "nán"
+  },
+  {
+    "content": "易",
+    "pinyin": "yì"
+  },
+  {
+    "content": "真",
+    "pinyin": "zhēn"
+  },
+  {
+    "content": "假",
+    "pinyin": "jiǎ"
+  },
+  {
+    "content": "明",
+    "pinyin": "míng"
+  },
+  {
+    "content": "暗",
+    "pinyin": "àn"
+  },
+  {
+    "content": "热",
+    "pinyin": "rè"
+  },
+  {
+    "content": "冷",
+    "pinyin": "lěng"
+  },
+  {
+    "content": "温",
+    "pinyin": "wēn"
+  },
+  {
+    "content": "凉",
+    "pinyin": "liáng"
+  },
+  {
+    "content": "晴",
+    "pinyin": "qíng"
+  },
+  {
+    "content": "阴",
+    "pinyin": "yīn"
+  },
+  {
+    "content": "雨",
+    "pinyin": "yǔ"
+  },
+  {
+    "content": "风",
+    "pinyin": "fēng"
+  }
+]

@@ -25,7 +25,7 @@ interface TTSResponse {
 export async function textToSpeech(text: string, gender: 'male' | 'female' = 'female'): Promise<TTSResponse> {
   try {
     const apiKey = getElevenLabsKey();
-    
+
     // If no API key, return empty
     if (!apiKey) {
       console.log('ElevenLabs API key not set, skipping TTS');
@@ -33,7 +33,7 @@ export async function textToSpeech(text: string, gender: 'male' | 'female' = 'fe
     }
 
     const voiceId = getVoiceId(gender);
-    console.log('Using voice ID:', voiceId);
+    console.log('Using ElevenLabs with voice ID:', voiceId, 'API key starts with:', apiKey.substring(0, 8));
 
     const response = await axios.post(
       `${ELEVENLABS_BASE_URL}/text-to-speech/${voiceId}`,
@@ -82,6 +82,10 @@ export async function textToSpeech(text: string, gender: 'male' | 'female' = 'fe
     };
   } catch (error: any) {
     console.error('ElevenLabs API error:', error.message);
+    if (error.response) {
+      console.error('ElevenLabs response status:', error.response.status);
+      console.error('ElevenLabs response data:', error.response.data);
+    }
     return {
       success: true, // Don't fail the whole chat
       audioUrl: undefined,

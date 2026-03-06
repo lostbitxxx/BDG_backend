@@ -18,6 +18,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 from services.audio_preprocessor import AudioPreprocessor
 from services.iflytek_fixed import IflytekEvaluator
+from services.ai_feedback import get_ai_feedback
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -71,49 +72,51 @@ def health_check():
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
-    """Main analysis endpoint - iFlytek ONLY"""
+    """Main analysis endpoint - iFlytek ONLY with AI feedback"""
     start_time = time.time()
-    
+
     # Check credentials
     if not os.environ.get('IFLYTEK_APP_ID'):
         return jsonify({
             'success': False,
             'error': 'iFlytek not configured'
         }), 500
-    
+
     data = request.get_json()
     if not data:
         return jsonify({'success': False, 'error': 'No JSON data'}), 400
-    
+
     audio_url = data.get('audio_url')
     expected_text = data.get('expected_text', '')
-    
+    section = data.get('section', 4)  # Default to Section 4 (reading passage)
+
     if not audio_url:
         return jsonify({'success': False, 'error': 'audio_url required'}), 400
-    
+
     logger.info(f"Analyzing: {audio_url}")
     logger.info(f"Text: {expected_text}")
-    
+    logger.info(f"Section: {section}")
+
     # Download and process audio
     preprocessor = AudioPreprocessor()
-    
+
     try:
         processed_audio = preprocessor.process(audio_url)
         if not processed_audio:
             return jsonify({'success': False, 'error': 'Failed to download audio'}), 400
-        
+
         # Check file size
         audio_size = os.path.getsize(processed_audio)
         if audio_size < 1000:
             return jsonify({'success': False, 'error': 'Audio too small'}), 400
-        
+
         logger.info(f"Audio: {audio_size} bytes")
-        
+
         # Call iFlytek
         logger.info("Calling iFlytek ISE API...")
         iflytek = get_iflytek()
         result = iflytek.evaluate(processed_audio, expected_text)
-        
+
         if not result.get('success'):
             response = {
                 'success': False,
@@ -123,27 +126,95 @@ def analyze():
             if result.get('dev_code'):
                 response['dev_info'] = f'iFlytek error code: {result["dev_code"]}'
             return jsonify(response), 500
-        
+
         scores = result.get('scores', {})
         transcription = result.get('transcription', '')
+        errors = result.get('errors', [])
+        defects = result.get('defects', [])
         processing_time = round(time.time() - start_time, 2)
-        
+
+        # Generate AI feedback
+        logger.info("Generating AI feedback...")
+        ai_feedback = get_ai_feedback()
+        detailed_feedback = ai_feedback.generate_feedback(
+            transcription=transcription,
+            expected_text=expected_text,
+            errors=errors,
+            defects=defects,
+            scores=scores,
+            section=section
+        )
+
         return jsonify({
             'success': True,
             'expected': expected_text,
             'transcription': transcription,
             'scores': scores,
-            'feedback': generate_feedback(scores),
+            'errors': errors,
+            'defects': defects,
+            'basic_feedback': generate_feedback(scores),
+            'ai_feedback': detailed_feedback,
+            'feedback': format_bilingual_feedback(detailed_feedback),
             'processing_time': processing_time,
             'engine': 'iflytek-ise',
             'test_type': 'PSC Reading Aloud (朗读)'
         })
-            
+
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
     finally:
         preprocessor.cleanup()
+
+
+def format_bilingual_feedback(feedback: dict) -> str:
+    """Format bilingual feedback for display"""
+    if not feedback:
+        return "No feedback available."
+
+    lines = []
+
+    # Overall assessment
+    if feedback.get('overall_assessment_en'):
+        lines.append(f"📊 Overall Assessment / 总体评价:")
+        lines.append(f"   English: {feedback['overall_assessment_en']}")
+        lines.append(f"   中文: {feedback.get('overall_assessment_zh', '')}")
+        lines.append("")
+
+    # Key issues
+    if feedback.get('key_issues_en'):
+        lines.append("🔍 Key Issues / 主要问题:")
+        for i, (en, zh) in enumerate(zip(feedback['key_issues_en'], feedback.get('key_issues_zh', [])), 1):
+            lines.append(f"   {i}. {en}")
+            lines.append(f"      中文: {zh}")
+        lines.append("")
+
+    # Improvement tips
+    if feedback.get('improvement_tips_en'):
+        lines.append("💡 Improvement Tips / 改进建议:")
+        for i, (en, zh) in enumerate(zip(feedback['improvement_tips_en'], feedback.get('improvement_tips_zh', [])), 1):
+            lines.append(f"   {i}. {en}")
+            lines.append(f"      中文: {zh}")
+        lines.append("")
+
+    # Practice recommendations
+    pr = feedback.get('practice_recommendations', {})
+    if pr:
+        lines.append("🏋️ Practice Recommendations / 练习建议:")
+        if pr.get('focus_areas_en'):
+            lines.append(f"   Focus Areas / 加强方面: {', '.join(pr.get('focus_areas_en', []))}")
+            lines.append(f"   中文: {', '.join(pr.get('focus_areas_zh', []))}")
+        if pr.get('daily_duration_en'):
+            lines.append(f"   Daily Duration / 每日时长: {pr.get('daily_duration_en')}")
+            lines.append(f"   中文: {pr.get('daily_duration_zh', '')}")
+        lines.append("")
+
+    # Encouragement
+    if feedback.get('encouragement_en'):
+        lines.append(f"💪 {feedback['encouragement_en']}")
+        lines.append(f"   {feedback.get('encouragement_zh', '')}")
+
+    return "\n".join(lines)
 
 
 def generate_feedback(scores: dict) -> str:
