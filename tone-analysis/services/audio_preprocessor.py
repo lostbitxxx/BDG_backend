@@ -7,6 +7,7 @@ import os
 import tempfile
 import subprocess
 import logging
+import shutil
 
 logger = logging.getLogger(__name__)
 
@@ -100,19 +101,15 @@ class AudioPreprocessor:
         output_file = os.path.join(self.temp_dir, 'processed.wav')
         
         try:
-            # Check if ffmpeg available
-            result = subprocess.run(
-                ['which', 'ffmpeg'],
-                capture_output=True,
-                text=True
-            )
-            if result.returncode != 0:
-                logger.warning("ffmpeg not found, using original file")
-                return input_file
+            # Prefer explicit FFMPEG_PATH (easier on Windows), fallback to PATH
+            ffmpeg_path = os.environ.get('FFMPEG_PATH') or shutil.which('ffmpeg')
+            if not ffmpeg_path:
+                logger.error("ffmpeg not found. Set FFMPEG_PATH in tone-analysis/.env to the full path of ffmpeg.exe or add ffmpeg to PATH.")
+                return None
             
             # Convert
             cmd = [
-                'ffmpeg',
+                ffmpeg_path,
                 '-i', input_file,
                 '-ar', str(self.TARGET_SAMPLE_RATE),
                 '-ac', str(self.TARGET_CHANNELS),
@@ -131,16 +128,16 @@ class AudioPreprocessor:
             if result.returncode == 0 and os.path.exists(output_file):
                 logger.info(f"Converted successfully: {output_file}")
                 return output_file
-            else:
-                logger.error(f"ffmpeg error: {result.stderr}")
-                return input_file  # Return original if conversion fails
+            
+            logger.error(f"ffmpeg error (code {result.returncode}): {result.stderr}")
+            return None
                 
         except subprocess.TimeoutExpired:
             logger.error("ffmpeg timeout")
-            return input_file
+            return None
         except Exception as e:
             logger.error(f"Conversion error: {e}")
-            return input_file
+            return None
     
     def _validate_audio(self, audio_file: str) -> bool:
         """Validate audio file"""

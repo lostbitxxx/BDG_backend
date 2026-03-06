@@ -4,6 +4,8 @@ import multer from 'multer';
 import crypto from 'crypto';
 import s3Client, { AWS_BUCKET } from '../config/s3';
 import axios from 'axios';
+import { optionalAuth } from '../middleware/auth';
+import { addAffinityXp, xpForScore } from '../services/affinity';
 
 const router = express.Router();
 
@@ -66,8 +68,8 @@ router.post('/upload', upload.single('audio'), async (req: MulterRequest, res: R
   }
 });
 
-// POST /api/audio/analyze
-router.post('/analyze', async (req: Request, res: Response) => {
+// POST /api/audio/analyze — optional auth: if logged in, affinity increases on success
+router.post('/analyze', optionalAuth, async (req: Request, res: Response) => {
   try {
     const { audioUrl, expectedText, section } = req.body;
 
@@ -89,8 +91,38 @@ router.post('/analyze', async (req: Request, res: Response) => {
       timeout: 120000, // 2 minute timeout
     });
 
-    console.log('Python response:', JSON.stringify(pythonResponse.data).substring(0, 200));
-    return res.json(pythonResponse.data);
+    const data = pythonResponse.data;
+    const isSuccess = data && (data.success !== false);
+
+    // Affinity: award XP from pronunciation score; level up when thresholds are reached
+    if (isSuccess && req.user?.uid) {
+      const overallScore: number | undefined =
+        data?.scores?.overall ?? data?.scores?.pronunciation;
+
+      if (typeof overallScore === 'number' && !Number.isNaN(overallScore)) {
+        const xpAwarded = xpForScore(overallScore);
+        const state = await addAffinityXp(req.user.uid, xpAwarded);
+        if (state) {
+          (data as Record<string, unknown>).affinityXp = state.xp;
+          (data as Record<string, unknown>).affinityLevel = state.level;
+          (data as Record<string, unknown>).affinityStage = state.stage;
+          (data as Record<string, unknown>).affinityXpAwarded = xpAwarded;
+          (data as Record<string, unknown>).affinityXpToNext = state.xpToNext;
+          (data as Record<string, unknown>).affinityXpCurrentLevel = state.xpCurrentLevel;
+          (data as Record<string, unknown>).affinityXpNeededForLevel = state.xpNeededForLevel;
+          console.log(
+            `[Affinity] score=${overallScore} +${xpAwarded} XP -> user ${req.user.uid} total=${state.xp} level=${state.level} (${state.stage})`
+          );
+        }
+      } else {
+        console.log('[Affinity] no score in analysis response, skipping XP');
+      }
+    } else if (isSuccess && !req.user?.uid) {
+      console.log('[Affinity] skipped (no auth token sent with /api/audio/analyze)');
+    }
+
+    console.log('Python response:', JSON.stringify(data).substring(0, 200));
+    return res.json(data);
   } catch (error: any) {
     console.error('=== Analysis Error ===');
     console.error('Error message:', error.message);
