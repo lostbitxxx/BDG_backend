@@ -40,10 +40,32 @@ const res = await fetch(`${API_BASE}/api/audio/analyze`, {
 });
 const data = await res.json();
 
-// If logged in and analysis succeeded, the backend may return the new affinity level:
+// If logged in and analysis succeeded, the backend returns affinity fields. Use these for UI:
+if (data.affinityXpAwarded !== undefined) {
+  // Show XP gained this exercise (e.g. "+25 XP") – this is what the user earned from their score
+  showXpGained(data.affinityXpAwarded);  // 5–50 depending on score (see table below)
+}
 if (data.affinityLevel !== undefined) {
-  // Update local state / UI with data.affinityLevel (1–5)
+  // Update level (1–5) and stage (stranger → soulmate) for progress bar / badge
+  updateAffinityLevel(data.affinityLevel, data.affinityStage);
+}
+if (data.affinityXp !== undefined) {
+  // Total XP (for progress within level: affinityXpCurrentLevel / affinityXpNeededForLevel)
+  updateAffinityProgress(data.affinityXp, data.affinityXpToNext, data.affinityXpCurrentLevel, data.affinityXpNeededForLevel);
 }
 ```
 
-After this, each successful analyze request from a logged-in user will increase affinity (and the backend will log `[Affinity] incremented for user ...`). If the token is not sent, the backend will log `[Affinity] skipped (no auth token sent with /api/audio/analyze)`.
+**Important:** Display **`affinityXpAwarded`** as the “XP you earned” (e.g. “+25 XP”). Do **not** show only the change in **`affinityLevel`** (1–5) as the reward, or users will see “+1” when their level goes from 1 to 2 even though they earned 25 XP.
+
+**Score → XP (from backend):**
+
+| Score   | XP awarded |
+|--------|------------|
+| &lt; 60 | 5          |
+| 60–69  | 10         |
+| 70–79  | 15         |
+| 80–89  | 25         |
+| 90–94  | 35         |
+| 95–100 | 50         |
+
+After this, each successful analyze request from a logged-in user will award XP based on score (and the backend will log `[Affinity] score=... +... XP -> ...`). If the token is not sent, the backend will log `[Affinity] skipped (no auth token sent with /api/audio/analyze)`.
