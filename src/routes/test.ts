@@ -44,6 +44,22 @@ interface TestSession {
 
 const sessions: Map<string, TestSession> = new Map();
 
+const SECTION_IDS = [1, 2, 3, 4, 5] as const;
+
+// GET /api/test/sections - List sections for full practice (1–5)
+router.get('/sections', (_req: Request, res: Response) => {
+  const sections = SECTION_IDS.map((section) => {
+    const config = SECTION_CONFIG[section];
+    return {
+      section,
+      name: config.name,
+      nameEn: config.nameEn,
+      timeLimit: config.timeLimit,
+    };
+  });
+  res.json({ success: true, sections, total: 5 });
+});
+
 // POST /api/test/start - Start a new test session
 router.post('/start', async (req: Request, res: Response) => {
   try {

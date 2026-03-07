@@ -6,6 +6,7 @@ import s3Client, { AWS_BUCKET } from '../config/s3';
 import axios from 'axios';
 import { optionalAuth } from '../middleware/auth';
 import { addAffinityXp, xpForScore } from '../services/affinity';
+import { gradeToGPA, scorePercentToGrade } from '../services/scoring/pscScoring';
 
 const router = express.Router();
 
@@ -82,17 +83,26 @@ router.post('/analyze', optionalAuth, async (req: Request, res: Response) => {
     console.log('Expected text:', expectedText);
     console.log('Python URL:', PYTHON_SERVICE_URL);
 
-    // Call Python service
+    // Call Python service (allow up to 5 min for long recordings / slow iFlytek)
     const pythonResponse = await axios.post(`${PYTHON_SERVICE_URL}/analyze`, {
       audio_url: audioUrl,
       expected_text: expectedText || '',
       section: section || 4,
     }, {
-      timeout: 120000, // 2 minute timeout
+      timeout: 300000, // 5 minute timeout
     });
 
     const data = pythonResponse.data;
     const isSuccess = data && (data.success !== false);
+
+    // GPA for individual mock test: convert overall score (0–100) to grade and GPA
+    const overallScoreForGpa = data?.scores?.overall ?? data?.scores?.pronunciation;
+    if (typeof overallScoreForGpa === 'number' && !Number.isNaN(overallScoreForGpa)) {
+      const grade = scorePercentToGrade(overallScoreForGpa);
+      const gpa = gradeToGPA(grade);
+      (data as Record<string, unknown>).grade = grade;
+      (data as Record<string, unknown>).gpa = Math.round(gpa * 100) / 100;
+    }
 
     // Debug: log auth and scores so we can see why XP might not be awarded
     const hasAuth = Boolean(req.headers.authorization);
@@ -136,6 +146,10 @@ router.post('/analyze', optionalAuth, async (req: Request, res: Response) => {
       );
     }
 
+    if (!isSuccess && data && typeof data === 'object') {
+      (data as Record<string, unknown>).code = 'audio_cannot_be_processed';
+    }
+
     console.log('Python response:', JSON.stringify(data).substring(0, 200));
     return res.json(data);
   } catch (error: any) {
@@ -144,17 +158,33 @@ router.post('/analyze', optionalAuth, async (req: Request, res: Response) => {
     console.error('Error code:', error.code);
     console.error('Response data:', error.response?.data);
     
+    const analysisFailedCode = 'audio_cannot_be_processed';
+
     if (error.code === 'ECONNREFUSED') {
-      return res.status(503).json({ 
-        success: false, 
-        error: 'Analysis service is not running. Please start the Python service.' 
+      return res.status(503).json({
+        success: false,
+        code: analysisFailedCode,
+        error: 'Analysis service is not running. Please start the Python service.',
       });
     }
-    
-    return res.status(500).json({ 
-      success: false, 
+
+    const isTimeout =
+      error.code === 'ECONNABORTED' ||
+      (error.response?.data?.error && String(error.response.data.error).toLowerCase().includes('timeout'));
+    if (isTimeout) {
+      return res.status(504).json({
+        success: false,
+        code: analysisFailedCode,
+        error: 'Analysis took too long. Try a shorter recording or try again.',
+        dev_info: error.response?.data?.dev_info || null,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      code: analysisFailedCode,
       error: error.response?.data?.error || error.message || 'Analysis failed',
-      dev_info: error.response?.data?.dev_info || null
+      dev_info: error.response?.data?.dev_info || null,
     });
   }
 });
