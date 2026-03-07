@@ -94,14 +94,23 @@ router.post('/analyze', optionalAuth, async (req: Request, res: Response) => {
     const data = pythonResponse.data;
     const isSuccess = data && (data.success !== false);
 
+    // Debug: log auth and scores so we can see why XP might not be awarded
+    const hasAuth = Boolean(req.headers.authorization);
+    const uid = req.user?.uid;
+    const scoresShape = data?.scores ? JSON.stringify(data.scores).slice(0, 120) : 'none';
+    const email = req.user?.email ?? 'none';
+    console.log(
+      `[Affinity] analyze done. success=${isSuccess} hasAuthHeader=${hasAuth} uid=${uid ?? 'none'} email=${email} scores=${scoresShape}`
+    );
+
     // Affinity: award XP from pronunciation score; level up when thresholds are reached
-    if (isSuccess && req.user?.uid) {
+    if (isSuccess && uid) {
       const overallScore: number | undefined =
         data?.scores?.overall ?? data?.scores?.pronunciation;
 
       if (typeof overallScore === 'number' && !Number.isNaN(overallScore)) {
         const xpAwarded = xpForScore(overallScore);
-        const state = await addAffinityXp(req.user.uid, xpAwarded);
+        const state = await addAffinityXp(uid, xpAwarded);
         if (state) {
           (data as Record<string, unknown>).affinityXp = state.xp;
           (data as Record<string, unknown>).affinityLevel = state.level;
@@ -111,14 +120,20 @@ router.post('/analyze', optionalAuth, async (req: Request, res: Response) => {
           (data as Record<string, unknown>).affinityXpCurrentLevel = state.xpCurrentLevel;
           (data as Record<string, unknown>).affinityXpNeededForLevel = state.xpNeededForLevel;
           console.log(
-            `[Affinity] score=${overallScore} +${xpAwarded} XP -> user ${req.user.uid} total=${state.xp} level=${state.level} (${state.stage})`
+            `[Affinity] score=${overallScore} +${xpAwarded} XP -> user ${uid} (${email}) total=${state.xp} level=${state.level} (${state.stage})`
           );
+        } else {
+          console.log('[Affinity] addAffinityXp returned null (Firestore error?)');
         }
       } else {
-        console.log('[Affinity] no score in analysis response, skipping XP');
+        console.log(
+          `[Affinity] no valid score. overallScore=${String(overallScore)} (type=${typeof data?.scores?.overall})`
+        );
       }
-    } else if (isSuccess && !req.user?.uid) {
-      console.log('[Affinity] skipped (no auth token sent with /api/audio/analyze)');
+    } else if (isSuccess && !uid) {
+      console.log(
+        '[Affinity] skipped: no uid. Send Authorization: Bearer <Firebase ID token> (use user.getIdToken(), not custom token)'
+      );
     }
 
     console.log('Python response:', JSON.stringify(data).substring(0, 200));
