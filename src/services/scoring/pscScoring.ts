@@ -53,6 +53,30 @@ export interface ScoreBreakdown {
   };
 }
 
+/** Letter grades for GPA (A=4.0, B+=3.0, C+=2.3, C=2.0, D=1.0) */
+export type GPAGrade = 'A' | 'B+' | 'B' | 'C+' | 'C' | 'D';
+
+/** Grade to GPA: A=4.0, B+=3.0, C+=2.3, C=2.0, D=1.0 */
+export function gradeToGPA(grade: string): number {
+  const g: Record<string, number> = {
+    'A+': 4.0, 'A': 4.0, 'A-': 3.5,
+    'B+': 3.0, 'B': 2.5, 'B-': 2.0,
+    'C+': 2.3, 'C': 2.0,
+    'D': 1.0
+  };
+  return g[grade] ?? 0;
+}
+
+/** Convert section score percentage (0–100) to letter grade for GPA */
+export function scorePercentToGrade(percent: number): GPAGrade {
+  if (percent >= 90) return 'A';
+  if (percent >= 85) return 'B+';
+  if (percent >= 80) return 'B';
+  if (percent >= 70) return 'C+';
+  if (percent >= 60) return 'C';
+  return 'D';
+}
+
 export interface PSCRawResult {
   sections: {
     1?: SectionScore;
@@ -67,6 +91,12 @@ export interface PSCRawResult {
   pass: boolean;
   timeUsed: number[];
   timeoutOccurred: boolean[];
+  /** Letter grade per section (for GPA) */
+  sectionGrades?: Partial<Record<1 | 2 | 3 | 4 | 5, string>>;
+  /** GPA per section (A=4, B+=3, C=2, D=1) */
+  sectionGPAs?: Partial<Record<1 | 2 | 3 | 4 | 5, number>>;
+  /** Test GPA = average of section GPAs */
+  testGPA?: number;
 }
 
 /**
@@ -443,6 +473,24 @@ export function calculateFullPSCScore(
   // Determine level
   const levelInfo = calculatePSCLevel(totalScore);
 
+  // Per-section GPA and test GPA (average of section GPAs)
+  const sectionGrades: Partial<Record<1 | 2 | 3 | 4 | 5, string>> = {};
+  const sectionGPAs: Partial<Record<1 | 2 | 3 | 4 | 5, number>> = {};
+  const gpaValues: number[] = [];
+  for (const [key, section] of Object.entries(sections)) {
+    if (!section) continue;
+    const sectionNum = parseInt(key, 10) as 1 | 2 | 3 | 4 | 5;
+    const percent = section.maxScore > 0 ? (section.finalScore / section.maxScore) * 100 : 0;
+    const grade = scorePercentToGrade(percent);
+    const gpa = gradeToGPA(grade);
+    sectionGrades[sectionNum] = grade;
+    sectionGPAs[sectionNum] = gpa;
+    gpaValues.push(gpa);
+  }
+  const testGPA = gpaValues.length > 0
+    ? Math.round((gpaValues.reduce((a, b) => a + b, 0) / gpaValues.length) * 100) / 100
+    : undefined;
+
   return {
     sections,
     totalScore: Math.round(totalScore * 10) / 10,
@@ -450,7 +498,10 @@ export function calculateFullPSCScore(
     grade: levelInfo.grade,
     pass: totalScore >= 60,
     timeUsed,
-    timeoutOccurred
+    timeoutOccurred,
+    sectionGrades,
+    sectionGPAs,
+    testGPA
   };
 }
 
@@ -460,5 +511,7 @@ export default {
   calculateSection3Score,
   calculateSection4Score,
   calculateSection5Score,
-  calculateFullPSCScore
+  calculateFullPSCScore,
+  gradeToGPA,
+  scorePercentToGrade
 };

@@ -118,14 +118,17 @@ def analyze():
         result = iflytek.evaluate(processed_audio, expected_text)
 
         if not result.get('success'):
+            # Expected analysis failure (rejected audio, timeout, etc.) → 200 so frontend
+            # can show the message and Rerecord without a server error. Only use 500
+            # for unexpected server/configuration errors.
             response = {
                 'success': False,
+                'code': 'audio_cannot_be_processed',
                 'error': result.get('error', 'Audio analysis service unavailable. Please try again later.')
             }
-            # Include developer info if available
             if result.get('dev_code'):
                 response['dev_info'] = f'iFlytek error code: {result["dev_code"]}'
-            return jsonify(response), 500
+            return jsonify(response), 200
 
         scores = result.get('scores', {})
         transcription = result.get('transcription', '')
@@ -133,17 +136,22 @@ def analyze():
         defects = result.get('defects', [])
         processing_time = round(time.time() - start_time, 2)
 
-        # Generate AI feedback
-        logger.info("Generating AI feedback...")
+        # Generate feedback: Section 3 (Choice & Judgment) uses fast fallback only to avoid
+        # slow OpenRouter calls when processing many short answers (25 questions).
         ai_feedback = get_ai_feedback()
-        detailed_feedback = ai_feedback.generate_feedback(
-            transcription=transcription,
-            expected_text=expected_text,
-            errors=errors,
-            defects=defects,
-            scores=scores,
-            section=section
-        )
+        if section == 3:
+            logger.info("Section 3: using fast fallback feedback (no OpenRouter).")
+            detailed_feedback = ai_feedback._fallback_feedback(scores, section)
+        else:
+            logger.info("Generating AI feedback...")
+            detailed_feedback = ai_feedback.generate_feedback(
+                transcription=transcription,
+                expected_text=expected_text,
+                errors=errors,
+                defects=defects,
+                scores=scores,
+                section=section
+            )
 
         return jsonify({
             'success': True,

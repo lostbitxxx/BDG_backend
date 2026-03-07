@@ -189,12 +189,12 @@ class IflytekEvaluator:
         ws.on_open = on_open
         ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
         
-        # Wait for result
-        timeout = 60
+        # Wait for result (allow up to 4 min for long recordings / slow iFlytek)
+        timeout = 240
         start = time.time()
         while not result_ready and time.time() - start < timeout:
             time.sleep(0.1)
-        
+
         if not result_ready:
             logger.error("Timeout waiting for result")
             result = {'success': False, 'error': 'Timeout'}
