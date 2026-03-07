@@ -98,7 +98,7 @@ router.post('/tailored-practice', async (req: Request, res: Response) => {
       'retroflex': 'retroflex',
       'nasal': 'nasal',
       'u_vs_ü': 'u_vs_ü',
-      'zcs_zhchsh': 'retroflex',
+      'zcs_zhchsh': 'zcs_vs_zhchsh',
       'n_vs_l': 'n_vs_l',
       'f_vs_h': 'f_vs_h',
       'an_vs_ang': 'an_vs_ang',
