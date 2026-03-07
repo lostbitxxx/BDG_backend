@@ -26,6 +26,8 @@ import {
   Section5Analysis
 } from '../services/scoring/pscScoring';
 import { SECTION_CONFIG } from '../data/psc';
+import { optionalAuth, authenticateToken } from '../middleware/auth';
+import { db } from '../config/firebase';
 
 const router = express.Router();
 
@@ -58,6 +60,52 @@ router.get('/sections', (_req: Request, res: Response) => {
     };
   });
   res.json({ success: true, sections, total: 5 });
+});
+
+// GET /api/test/history - List all completed tests and marks for the logged-in user
+router.get('/history', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const uid = (req as any).user?.uid;
+    if (!uid) {
+      return res.status(401).json({ success: false, error: 'Not authenticated' });
+    }
+    if (!db.collection) {
+      return res.json({ success: true, history: [] });
+    }
+    const limit = Math.min(parseInt(String(req.query.limit), 10) || 50, 100);
+    const snapshot = await db
+      .collection('users')
+      .doc(uid)
+      .collection('testHistory')
+      .orderBy('completedAt', 'desc')
+      .limit(limit)
+      .get();
+    const history = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      // Ensure numeric fields are never null so frontend can safely use .toFixed()
+      const totalScore = data.totalScore != null ? Number(data.totalScore) : 0;
+      const testGPA = data.testGPA != null ? Number(data.testGPA) : 0;
+      return {
+        id: doc.id,
+        sessionId: data.sessionId,
+        type: data.type,
+        partialSection: data.partialSection ?? undefined,
+        completedAt: data.completedAt?.toDate?.()?.toISOString?.() ?? data.completedAt,
+        totalScore,
+        testGPA,
+        level: data.level ?? '',
+        grade: data.grade ?? '',
+        pass: data.pass ?? false,
+        sectionGrades: data.sectionGrades ?? undefined,
+        sectionGPAs: data.sectionGPAs ?? undefined,
+        completedSections: data.completedSections ?? [],
+      };
+    });
+    res.json({ success: true, history });
+  } catch (error) {
+    console.error('Error fetching test history:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch test history' });
+  }
 });
 
 // POST /api/test/start - Start a new test session
@@ -190,10 +238,11 @@ router.post('/:sessionId/submit/:section', (req: Request, res: Response) => {
   }
 });
 
-// POST /api/test/:sessionId/complete - Complete test and get final score
-router.post('/:sessionId/complete', (req: Request, res: Response) => {
+// POST /api/test/:sessionId/complete - Complete test and get final score; save to history if logged in
+router.post('/:sessionId/complete', optionalAuth, async (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
+    const uid = (req as any).user?.uid;
 
     const session = sessions.get(sessionId);
     if (!session) {
@@ -213,6 +262,33 @@ router.post('/:sessionId/complete', (req: Request, res: Response) => {
     const result = calculateFullPSCScore(responses, durations);
 
     session.status = 'completed';
+
+    // Record in history for logged-in users (all tests done and marks)
+    if (uid && db.collection) {
+      try {
+        await db
+          .collection('users')
+          .doc(uid)
+          .collection('testHistory')
+          .add({
+            sessionId,
+            type: session.type,
+            partialSection: session.partialSection ?? null,
+            completedAt: new Date(),
+            totalScore: result.totalScore,
+            testGPA: result.testGPA ?? null,
+            level: result.level,
+            grade: result.grade,
+            pass: result.pass,
+            sectionGrades: result.sectionGrades ?? null,
+            sectionGPAs: result.sectionGPAs ?? null,
+            completedSections: session.completedSections,
+          });
+      } catch (historyErr) {
+        console.error('Failed to save test history:', historyErr);
+        // Don't fail the request; result is still returned
+      }
+    }
 
     res.json({
       success: true,
