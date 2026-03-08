@@ -89,19 +89,6 @@ def distribute_scores(
                     actual_char = tc
                     break
 
-        # Get actual pinyin/initial/final from transcribed character
-        actual_pinyin = ""
-        actual_tone = 0
-        actual_initial = ""
-        actual_final = ""
-        if actual_char:
-            actual_info = pinyin_db.get_char_info(actual_char)
-            if actual_info:
-                actual_pinyin = actual_info.get("pinyin", "")
-                actual_tone = actual_info.get("tone", 0)
-                actual_initial = pinyin_db.get_initial(actual_pinyin) if actual_pinyin else ""
-                actual_final = pinyin_db.get_final(actual_pinyin) if actual_pinyin else ""
-
         # Position weight (slightly higher for beginning)
         position_weight = 1.0 + (0.05 if i < 3 else 0)
 
@@ -136,15 +123,33 @@ def distribute_scores(
                 pinyin = char_info.get("pinyin", "")
 
         expected_tone = get_tone_from_pinyin(pinyin) if pinyin else 0
+        expected_initial = pinyin_db.get_initial(pinyin) if pinyin else ""
+        expected_final = pinyin_db.get_final(pinyin) if pinyin else ""
 
-        # Generate feedback based on issues
+        # Get actual values - ASR can't determine context-specific pronunciation
+        # If user said the correct character, actual = expected
+        # If wrong character, leave actual empty
+        actual_pinyin = ""
+        actual_tone = 0
+        actual_initial = ""
+        actual_final = ""
+        if actual_char == char:
+            # User said the correct character - use expected values
+            actual_pinyin = pinyin
+            actual_tone = expected_tone
+            actual_initial = expected_initial
+            actual_final = expected_final
+
+        # Generate feedback based on issues - show even for correct but difficult chars
         feedback_en = ""
         feedback_zh = ""
         fix_tip_en = ""
         fix_tip_zh = ""
         practice_words = []
 
-        if status != "correct" and issues:
+        # Always provide feedback if character has known issues (regardless of status)
+        # OR if status is not correct
+        if issues and (status != "correct" or difficulty >= 3):
             # Generate specific feedback based on issues
             for issue in issues[:2]:  # Limit to 2 issues
                 if issue == "zh":
@@ -195,12 +200,31 @@ def distribute_scores(
                     fix_tip_en = "Say it quickly and lightly"
                     fix_tip_zh = "快速轻柔地发出"
                     practice_words = ["的", "了", "着"]
+                elif issue in ["tone_2", "tone_4", "tone_1"]:
+                    tone_num = issue.split("_")[1]
+                    tone_names = {"1": "first", "2": "second", "3": "third", "4": "fourth"}
+                    feedback_en = f"Practice {tone_names.get(tone_num, '')} tone ({tone_num})"
+                    feedback_zh = f"练习{tone_num}声"
+                    fix_tip_en = f"Focus on tone {tone_num}"
+                    fix_tip_zh = f"注意{tone_num}声"
+                elif issue in ["x", "g", "d", "b", "p", "m", "f", "t", "n", "s", "c", "z", "j", "q", "k", "h", "w", "y"]:
+                    # Initial consonant practice
+                    feedback_en = f"Initial consonant {issue} needs practice"
+                    feedback_zh = f"声母{issue}需要练习"
+                    fix_tip_en = f"Practice the {issue} initial sound"
+                    fix_tip_zh = f"练习{issue}声母发音"
                 else:
-                    # Generic feedback
-                    feedback_en = f"Pronunciation needs improvement"
-                    feedback_zh = "发音需要改进"
-                    fix_tip_en = "Practice this character carefully"
-                    fix_tip_zh = "仔细练习这个字"
+                    # Generic feedback based on difficulty
+                    if difficulty >= 4:
+                        feedback_en = f"This is a difficult character. Focus on {issues[0] if issues else 'clear pronunciation'}"
+                        feedback_zh = f"这是一个难点字，重点练习{issues[0] if issues else '清晰发音'}"
+                        fix_tip_en = "Practice this character with attention to details"
+                        fix_tip_zh = "仔细练习这个字的发音"
+                    else:
+                        feedback_en = "Pronunciation needs improvement"
+                        feedback_zh = "发音需要改进"
+                        fix_tip_en = "Practice this character carefully"
+                        fix_tip_zh = "仔细练习这个字"
 
         elif status != "correct":
             feedback_en = "Pronunciation needs improvement"
@@ -208,10 +232,7 @@ def distribute_scores(
             fix_tip_en = "Focus on clear pronunciation"
             fix_tip_zh = "注意清晰发音"
 
-        # Build result - extract initial and final from pinyin
-        expected_initial = pinyin_db.get_initial(pinyin) if pinyin else ""
-        expected_final = pinyin_db.get_final(pinyin) if pinyin else ""
-
+        # Build result
         result = {
             "character": char,
             "expected_pinyin": pinyin,
@@ -256,16 +277,22 @@ def analyze_tone_patterns(character_results: List[Dict[str, Any]]) -> Dict[str, 
 
     for cr in character_results:
         tone_total += 1
-        if cr.get("estimated_tone_accuracy", 0) >= 70:
+        issues = cr.get("issues", [])
+
+        # Count as correct only if estimated tone accuracy is high AND no tone issues
+        has_tone_issue = any("tone" in str(issue) for issue in issues)
+
+        if cr.get("estimated_tone_accuracy", 0) >= 70 and not has_tone_issue:
             tone_correct += 1
         else:
-            issues = cr.get("issues", [])
+            # Add to tone issues
             for issue in issues:
-                if "tone" in issue:
+                if "tone" in str(issue):
                     tone_issues.append({
                         "character": cr["character"],
                         "tone": cr.get("expected_tone", 0),
-                        "accuracy": cr.get("estimated_tone_accuracy", 0)
+                        "accuracy": cr.get("estimated_tone_accuracy", 0),
+                        "issue": issue
                     })
 
     accuracy = round(tone_correct / tone_total * 100, 1) if tone_total > 0 else 0
@@ -281,40 +308,55 @@ def analyze_tone_patterns(character_results: List[Dict[str, Any]]) -> Dict[str, 
 def analyze_phoneme_patterns(character_results: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Analyze phoneme (initial/final) patterns from character results"""
 
-    initial_issues = []
-    final_issues = []
+    consonant_issues = []
+    vowel_issues = []
 
     for cr in character_results:
-        if cr.get("estimated_pronunciation", 0) < 75:
-            issues = cr.get("issues", [])
+        # Include all characters with issues, not just low scores
+        issues = cr.get("issues", [])
+        if issues:
             for issue in issues:
+                # Retroflex consonants
                 if issue in ["zh", "ch", "sh", "r"]:
-                    initial_issues.append({
+                    consonant_issues.append({
                         "character": cr["character"],
                         "issue": issue,
+                        "initial": cr.get("expected_initial", ""),
                         "accuracy": cr.get("estimated_pronunciation", 0)
                     })
+                # Nasal/lateral distinction
                 elif issue in ["n", "l"]:
-                    initial_issues.append({
+                    consonant_issues.append({
                         "character": cr["character"],
                         "issue": "n/l",
+                        "initial": cr.get("expected_initial", ""),
                         "accuracy": cr.get("estimated_pronunciation", 0)
                     })
-                elif "ü" in issue:
-                    final_issues.append({
+                # Other initials
+                elif isinstance(issue, str) and len(issue) == 1 and issue.isalpha():
+                    consonant_issues.append({
                         "character": cr["character"],
-                        "issue": "ü",
+                        "issue": issue,
+                        "initial": cr.get("expected_initial", ""),
+                        "accuracy": cr.get("estimated_pronunciation", 0)
+                    })
+                # Vowel issues (ü, tones)
+                elif "ü" in issue or "tone" in str(issue):
+                    vowel_issues.append({
+                        "character": cr["character"],
+                        "issue": issue,
+                        "final": cr.get("expected_final", ""),
                         "accuracy": cr.get("estimated_pronunciation", 0)
                     })
 
     # Count issues by type
     from collections import Counter
-    initial_counts = Counter([i["issue"] for i in initial_issues])
-    final_counts = Counter([i["issue"] for i in final_issues])
+    consonant_counts = Counter([i["issue"] for i in consonant_issues])
+    vowel_counts = Counter([i["issue"] for i in vowel_issues])
 
     return {
-        "initial_issues": initial_issues[:5],
-        "final_issues": final_issues[:5],
-        "common_initial": list(initial_counts.keys())[:3],
-        "common_final": list(final_counts.keys())[:3],
+        "consonant_issues": consonant_issues[:10],
+        "vowel_issues": vowel_issues[:10],
+        "common_initial": list(consonant_counts.keys())[:5],
+        "common_final": list(vowel_counts.keys())[:5],
     }

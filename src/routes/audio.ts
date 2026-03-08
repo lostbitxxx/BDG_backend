@@ -229,6 +229,36 @@ router.get('/analysis-status/:jobId', authenticateToken, async (req: Request, re
   }
 });
 
+// POST /api/audio/tts - Generate TTS audio for text
+router.post('/tts', async (req: Request, res: Response) => {
+  try {
+    const { text, gender } = req.body;
+
+    if (!text) {
+      return res.status(400).json({ success: false, error: 'Text is required' });
+    }
+
+    console.log('TTS request:', text.substring(0, 50));
+
+    // Import ElevenLabs TTS
+    const { textToSpeech } = await import('../services/elevenLabs');
+    const result = await textToSpeech(text, gender || 'female');
+
+    if (!result.success) {
+      return res.status(500).json({ success: false, error: result.error || 'TTS failed' });
+    }
+
+    return res.json({
+      success: true,
+      audioUrl: result.audioUrl,
+      audioBase64: result.audioBase64
+    });
+  } catch (error: any) {
+    console.error('TTS error:', error.message);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Health check for audio service
 router.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', service: 'audio-upload', bucket: AWS_BUCKET });

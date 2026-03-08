@@ -10,7 +10,7 @@ const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io/v1';
 // Voice IDs from environment
 const getVoiceId = (gender: 'male' | 'female' = 'female') => {
   if (gender === 'male') {
-    return process.env.ELEVENLABS_VOICE_MALE || '4VZIsMPtgggwNg7OXbPY';
+    return process.env.ELEVENLABS_VOICE_MALE || 'DowyQ68vDpgFYdWVGjc3';
   }
   return process.env.ELEVENLABS_VOICE_FEMALE || '9lHjugDhwqoxA5MhX0az';
 };
