@@ -983,10 +983,48 @@ def get_final(pinyin: str) -> str:
 
 
 def get_tone(pinyin: str) -> int:
-    """Extract tone from pinyin"""
-    if pinyin and pinyin[-1].isdigit():
+    """Extract tone from pinyin (handles both ASCII digits and Unicode tone marks)"""
+    if not pinyin:
+        return 0
+
+    # Check if last char is a digit (some pinyin styles return numbers)
+    if pinyin[-1].isdigit():
         return int(pinyin[-1])
-    return 0  # Neutral
+
+    # Handle Unicode tone marks (āáǎà, ēéěè, etc.)
+    import unicodedata
+    for c in pinyin:
+        try:
+            name = unicodedata.name(c, '')
+            # Tone 1: macron (āēīōū)
+            if 'MACRON' in name:
+                # Check if it's u + macron - could be 1 or 5
+                idx = pinyin.index(c)
+                if c == 'ū' and idx + 1 < len(pinyin) and pinyin[idx + 1] == 'n':
+                    return 1  # un like chūn
+                return 1
+            # Tone 2: acute (áéíóú)
+            elif 'ACUTE' in name:
+                return 2
+            # Tone 3: caron/hacek (ǎěǐǒ)
+            elif 'CARON' in name or 'HACEK' in name:
+                return 3
+            # Tone 4: grave (àèìòù)
+            elif 'GRAVE' in name:
+                return 4
+            # Handle ü tones (ǖǘǚǜ)
+            elif c == 'ǜ':
+                return 4
+            elif c == 'ǚ':
+                return 3
+            elif c == 'ǘ':
+                return 2
+            elif c == 'ǖ':
+                return 1
+        except ValueError:
+            pass
+
+    return 0  # Neutral or unknown
 
 
 def is_retroflex(pinyin: str) -> bool:

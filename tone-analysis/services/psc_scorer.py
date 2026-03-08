@@ -291,7 +291,8 @@ class PSCScorer:
                 timeout_penalty = config["timeout_penalty"]
 
         elif section == 5:
-            if duration < 30:
+            # Official PSC rule: 說話不足0.5分鐘（含0.5分鐘）扣30分
+            if duration <= 30:
                 timeout_penalty = config["time_deduction"]["under30s"]
             elif duration < 60:
                 timeout_penalty = config["time_deduction"]["under1min"]

@@ -8,6 +8,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field
 
 from . import pinyin_db
+from .tone_sandhi_detector import ToneSandhiDetector
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -160,15 +161,48 @@ class ErrorDetector:
 
             character_results.append(result)
 
+        # Detect tone sandhi errors (for Section 2)
+        logger.info("Detecting tone sandhi errors...")
+        sandhi_detector = ToneSandhiDetector()
+        sandhi_result = sandhi_detector.detect_sandhi_errors(
+            expected_text=expected_text,
+            transcription=transcription
+        )
+
+        # Add sandhi errors to the error list
+        for sandhi_error in sandhi_result.get("sandhi_errors", []):
+            error = PronunciationError(
+                character=sandhi_error.character,
+                position=sandhi_error.position,
+                category="tone_sandhi_error",
+                expected_pinyin="",
+                expected_tone=sandhi_error.expected_tone,
+                actual_tone=sandhi_error.actual_tone,
+                severity="error",
+                psc_impact=0.1,
+                detection_method="tone_sandhi_analyzer",
+                confidence=0.8,
+                error_code="TONE_SANDHI",
+                description_en=sandhi_error.description_en,
+                description_zh=sandhi_error.description_zh,
+                fix_tip_en=f"Remember: {sandhi_error.description_en}",
+                fix_tip_zh=f"注意: {sandhi_error.description_zh}"
+            )
+            all_errors.append(error)
+
         # Generate summary
         summary = self._generate_error_summary(all_errors)
+
+        # Add sandhi results to summary
+        summary["sandhi_summary"] = sandhi_result.get("summary", {})
 
         return {
             "character_results": character_results,
             "errors": all_errors,
             "summary": summary,
             "expected_text": expected_text,
-            "transcription": transcription
+            "transcription": transcription,
+            "sandhi_results": sandhi_result
         }
 
     def _find_matching_char(

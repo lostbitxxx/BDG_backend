@@ -167,24 +167,28 @@ class FeedbackGenerator:
                 fix_tip_en = ''
                 fix_tip_zh = ''
 
+                # Track character index for showing length error only once
+                char_index = len([c for c in expected_text[:expected_text.index(char)+1] if c not in '，。？！、；：""''（）【】《》…—'])
+
                 if overall_score < 80 and len(error_chars) == 0:
                     # Low score but no character mismatch - likely pronunciation issues
-                    if length_diff != 0:
+                    if length_diff != 0 and char_index == 1:
+                        # Only show length mismatch on first character
                         status = 'review'
                         error_type = 'length_mismatch'
                         if length_diff > 0:
-                            feedback_en = f'Possible omission - expected {length_diff} more character(s)'
-                            feedback_zh = f'可能漏读 - 预期多{length_diff}个字符'
+                            feedback_en = f'Possible omission detected ({length_diff} chars less in transcription)'
+                            feedback_zh = f'检测到漏读（转录文本少{length_diff}个字符）'
                         else:
-                            feedback_en = f'Possible addition - {abs(length_diff)} extra character(s)'
-                            feedback_zh = f'可能增读 - 多{abs(length_diff)}个字符'
+                            feedback_en = f'Possible addition detected ({abs(length_diff)} extra chars in transcription)'
+                            feedback_zh = f'检测到增读（转录文本多{abs(length_diff)}个字符）'
                     else:
                         status = 'review'
                         error_type = 'pronunciation_needs_work'
-                        feedback_en = 'Pronunciation needs improvement - listen to native speakers'
-                        feedback_zh = '发音需要改进 - 建议听标准普通话'
-                        fix_tip_en = 'Practice each character with attention to tone and pronunciation'
-                        fix_tip_zh = '注意声调和发音，多练习每个字'
+                        feedback_en = 'Pronunciation needs improvement'
+                        feedback_zh = '发音需要改进'
+                        fix_tip_en = 'Focus on tone accuracy and clear pronunciation'
+                        fix_tip_zh = '注意声调准确性和清晰发音'
 
                 entry = {
                     'character': char,

@@ -24,6 +24,7 @@ from services.whisper_service import get_whisper_service
 from services.elevenlabs_service import ElevenLabsTranscriber, generate_simple_scores, identify_errors
 from services.error_detector import ErrorDetector
 from services.psc_scorer import PSCScorer
+from services.score_distributor import distribute_scores, analyze_tone_patterns, analyze_phoneme_patterns
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -221,6 +222,22 @@ def analyze():
             expected_text=expected_text_clean
         )
 
+        # Add enhanced character analysis using score distribution
+        logger.info("Generating character analysis with score distribution...")
+        try:
+            char_analysis = distribute_scores(
+                expected_text=expected_text_clean,
+                transcription=transcription_clean,
+                overall_score=scores.get('pronunciation', scores.get('overall', 0)),
+                tone_score=scores.get('tone', 0),
+                fluency_score=scores.get('fluency', 0)
+            )
+            detailed_feedback['character_analysis'] = char_analysis
+            detailed_feedback['tone_analysis'] = analyze_tone_patterns(char_analysis)
+            detailed_feedback['phoneme_analysis'] = analyze_phoneme_patterns(char_analysis)
+        except Exception as e:
+            logger.warning(f"Score distribution failed: {e}")
+
         return jsonify({
             'success': True,
             'expected': expected_text,
@@ -386,6 +403,22 @@ def analyze_elevenlabs():
             error_summary=error_summary,
             expected_text=expected_text_clean
         )
+
+        # Add enhanced character analysis using score distribution
+        logger.info("Generating character analysis with score distribution...")
+        try:
+            char_analysis = distribute_scores(
+                expected_text=expected_text_clean,
+                transcription=transcription_clean,
+                overall_score=scores.get('pronunciation', scores.get('overall', 0)),
+                tone_score=scores.get('tone', 0),
+                fluency_score=scores.get('fluency', 0)
+            )
+            detailed_feedback['character_analysis'] = char_analysis
+            detailed_feedback['tone_analysis'] = analyze_tone_patterns(char_analysis)
+            detailed_feedback['phoneme_analysis'] = analyze_phoneme_patterns(char_analysis)
+        except Exception as e:
+            logger.warning(f"Score distribution failed: {e}")
 
         return jsonify({
             'success': True,
@@ -660,6 +693,22 @@ def analyze_comprehensive():
             error_summary=error_summary,
             expected_text=expected_text_clean
         )
+
+        # Add enhanced character analysis using score distribution
+        logger.info("Generating character analysis with score distribution...")
+        try:
+            char_analysis = distribute_scores(
+                expected_text=expected_text_clean,
+                transcription=transcription_clean,
+                overall_score=psc_scores.get('pronunciation', psc_scores.get('overall', 0)),
+                tone_score=psc_scores.get('tone', 0),
+                fluency_score=psc_scores.get('fluency', 0)
+            )
+            detailed_feedback['character_analysis'] = char_analysis
+            detailed_feedback['tone_analysis'] = analyze_tone_patterns(char_analysis)
+            detailed_feedback['phoneme_analysis'] = analyze_phoneme_patterns(char_analysis)
+        except Exception as e:
+            logger.warning(f"Score distribution failed: {e}")
 
         processing_time = round(time.time() - start_time, 2)
 
