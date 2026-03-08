@@ -4,6 +4,7 @@ import { sendToAI } from '../services/openRouter';
 import { generateSystemPrompt } from '../services/chatPrompt';
 import { textToSpeech } from '../services/elevenLabs';
 import { getRandomQuestions } from '../data/questions';
+import { authenticateToken } from '../middleware/auth';
 
 const router = express.Router();
 
@@ -12,10 +13,25 @@ function stripEmojis(text: string): string {
   return text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
 }
 
+// Map frontend character keys to backend prompt keys
+function mapCharacterToPromptKey(character: string): string {
+  switch (character) {
+    case 'red-birdie':
+      return 'redbird';  // Red Birdie - cheerful and energetic
+    case 'foggy-birdie':
+      return 'foggy';   // Foggy Birdie - cool and clever
+    case 'final-birdie':
+      return 'final';    // Final Birdie - wise and calm
+    default:
+      return 'redbird';
+  }
+}
+
 // Map character to ElevenLabs gender
 function getGenderForCharacter(character: string): 'male' | 'female' {
   switch (character) {
-    case 'owl':
+    case 'foggy-birdie':
+    case 'final-birdie':
       return 'male';
     default:
       return 'female';
@@ -23,10 +39,11 @@ function getGenderForCharacter(character: string): 'male' | 'female' {
 }
 
 // POST /api/chat
-router.post('/chat', async (req: Request, res: Response) => {
-  const { message, character = 'bunny' } = req.body as { 
-    message: unknown; 
+router.post('/chat', authenticateToken, async (req: Request, res: Response) => {
+  const { message, character = 'red-birdie', gender } = req.body as {
+    message: unknown;
     character?: string;
+    gender?: 'male' | 'female';
   };
 
   if (!isNonEmptyString(message)) {
@@ -37,9 +54,12 @@ router.post('/chat', async (req: Request, res: Response) => {
   }
 
   try {
+    // Map frontend character key to backend prompt key
+    const promptKey = mapCharacterToPromptKey(character);
+
     // Build messages with character-specific system prompt
     const messages = [
-      { role: 'system' as const, content: generateSystemPrompt(character) },
+      { role: 'system' as const, content: generateSystemPrompt(promptKey) },
       { role: 'user' as const, content: message }
     ];
 
@@ -53,11 +73,11 @@ router.post('/chat', async (req: Request, res: Response) => {
     // Strip emojis from response
     const cleanResponse = stripEmojis(aiResult.message || '');
 
-    // Determine TTS voice gender based on character
-    const gender = getGenderForCharacter(character);
+    // Determine TTS voice gender: user preference takes priority, then fall back to character default
+    const voiceGender: 'male' | 'female' = gender || getGenderForCharacter(character);
 
     // Generate TTS audio with ElevenLabs
-    const ttsResult = await textToSpeech(cleanResponse, gender);
+    const ttsResult = await textToSpeech(cleanResponse, voiceGender);
 
     // Return audio as base64 (keeps API compatible)
     return res.json({
@@ -73,7 +93,7 @@ router.post('/chat', async (req: Request, res: Response) => {
 });
 
 // POST /api/tailored-practice - Generate tailored practice questions using AI analysis + question bank
-router.post('/tailored-practice', async (req: Request, res: Response) => {
+router.post('/tailored-practice', authenticateToken, async (req: Request, res: Response) => {
   const { userInput, categories, weaknesses, feedback, historyRecord } = req.body as {
     userInput?: string;
     categories?: string[];

@@ -4,7 +4,7 @@ import multer from 'multer';
 import crypto from 'crypto';
 import s3Client, { AWS_BUCKET } from '../config/s3';
 import axios from 'axios';
-import { optionalAuth } from '../middleware/auth';
+import { authenticateToken } from '../middleware/auth';
 import { addAffinityXp, xpForScore } from '../services/affinity';
 import { gradeToGPA, scorePercentToGrade } from '../services/scoring/pscScoring';
 
@@ -32,8 +32,10 @@ interface MulterRequest extends Request {
 const PYTHON_SERVICE_URL = process.env.PYTHON_SERVICE_URL || 'http://localhost:8000';
 
 // POST /api/audio/upload
-router.post('/upload', upload.single('audio'), async (req: MulterRequest, res: Response) => {
+router.post('/upload', authenticateToken, upload.single('audio'), async (req: MulterRequest, res: Response) => {
   try {
+    console.log('Audio upload: User authenticated:', req.user?.uid);
+
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'No audio file provided' });
     }
@@ -42,6 +44,8 @@ router.post('/upload', upload.single('audio'), async (req: MulterRequest, res: R
     const uniqueId = crypto.randomUUID();
     const extension = req.file.originalname.split('.').pop() || 'webm';
     const key = `audio/${uniqueId}.${extension}`;
+
+    console.log('Audio upload: Uploading to S3, bucket:', AWS_BUCKET, 'key:', key);
 
     // Upload to S3
     const command = new PutObjectCommand({
@@ -52,6 +56,7 @@ router.post('/upload', upload.single('audio'), async (req: MulterRequest, res: R
     });
 
     await s3Client.send(command);
+    console.log('Audio upload: S3 upload successful');
 
     // Return the S3 URL
     const s3Url = `https://${AWS_BUCKET}.s3.ap-southeast-2.amazonaws.com/${key}`;
@@ -63,14 +68,14 @@ router.post('/upload', upload.single('audio'), async (req: MulterRequest, res: R
       size: req.file.size,
       contentType: req.file.mimetype,
     });
-  } catch (error) {
-    console.error('Upload error:', error);
-    return res.status(500).json({ success: false, error: 'Failed to upload audio' });
+  } catch (error: any) {
+    console.error('Upload error:', error.message, error.stack);
+    return res.status(500).json({ success: false, error: 'Failed to upload audio: ' + error.message });
   }
 });
 
-// POST /api/audio/analyze — optional auth: if logged in, affinity increases on success
-router.post('/analyze', optionalAuth, async (req: Request, res: Response) => {
+// POST /api/audio/analyze — requires authentication
+router.post('/analyze', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { audioUrl, expectedText, section } = req.body;
 
@@ -83,8 +88,9 @@ router.post('/analyze', optionalAuth, async (req: Request, res: Response) => {
     console.log('Expected text:', expectedText);
     console.log('Python URL:', PYTHON_SERVICE_URL);
 
-    // Call Python service (allow up to 5 min for long recordings / slow iFlytek)
-    const pythonResponse = await axios.post(`${PYTHON_SERVICE_URL}/analyze`, {
+    // Call Python service - timeout increased to 5 minutes for long audio
+    // ElevenLabs for transcription + iFlytek for scoring
+    const pythonResponse = await axios.post(`${PYTHON_SERVICE_URL}/analyze/elevenlabs`, {
       audio_url: audioUrl,
       expected_text: expectedText || '',
       section: section || 4,
@@ -112,6 +118,22 @@ router.post('/analyze', optionalAuth, async (req: Request, res: Response) => {
     console.log(
       `[Affinity] analyze done. success=${isSuccess} hasAuthHeader=${hasAuth} uid=${uid ?? 'none'} email=${email} scores=${scoresShape}`
     );
+    // Log transcription in terminal
+    if (data?.transcription) {
+      console.log('=== Transcription ===');
+      console.log(data.transcription);
+      console.log('=====================');
+    }
+
+    // Log scores
+    if (data?.scores) {
+      console.log('=== Scores ===');
+      console.log('Overall:', data.scores.overall);
+      console.log('Pronunciation:', data.scores.pronunciation);
+      console.log('Tone:', data.scores.tone);
+      console.log('Fluency:', data.scores.fluency);
+      console.log('==============');
+    }
 
     // Affinity: award XP from pronunciation score; level up when thresholds are reached
     if (isSuccess && uid) {
@@ -190,7 +212,7 @@ router.post('/analyze', optionalAuth, async (req: Request, res: Response) => {
 });
 
 // GET /api/audio/analysis-status/:jobId
-router.get('/analysis-status/:jobId', async (req: Request, res: Response) => {
+router.get('/analysis-status/:jobId', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { jobId } = req.params;
     

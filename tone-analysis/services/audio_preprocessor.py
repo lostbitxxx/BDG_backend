@@ -11,6 +11,164 @@ import shutil
 
 logger = logging.getLogger(__name__)
 
+# Max audio duration in seconds (0 = no limit). Default 300 seconds (5 minutes)
+MAX_AUDIO_DURATION = int(os.environ.get('MAX_AUDIO_DURATION', 300))
+
+
+def enhance_audio(audio_path: str) -> str:
+    """
+    Apply audio enhancement: noise reduction, silence removal, normalization
+    Returns path to enhanced audio file
+    """
+    import noisereduce as nr
+    import soundfile as sf
+    import numpy as np
+
+    try:
+        # Load audio
+        audio, sr = sf.read(audio_path)
+
+        # Convert stereo to mono if needed
+        if len(audio.shape) > 1:
+            audio = np.mean(audio, axis=1)
+
+        duration = len(audio) / sr
+        logger.info(f"Enhancing audio: {duration:.2f}s at {sr}Hz")
+
+        # Calculate RMS BEFORE
+        rms_before = np.sqrt(np.mean(audio**2))
+        logger.info(f"RMS before: {rms_before:.4f}, max: {np.max(np.abs(audio)):.4f}")
+
+        # Skip if audio is too short
+        if len(audio) < sr * 0.5:
+            logger.warning("Audio too short for enhancement")
+            return audio_path
+
+        # 1. Noise reduction - use beginning as noise profile
+        try:
+            # Use first 0.5 seconds as noise sample
+            noise_sample = audio[:int(sr * 0.5)]
+            audio = nr.reduce_noise(y=audio, sr=sr, y_noise=noise_sample, n_std_thresh=0.5, prop_decrease=1.0)
+            logger.info("Noise reduction applied")
+        except Exception as e:
+            logger.warning(f"Noise reduction failed: {e}")
+
+        # 2. Remove silence at beginning and end
+        try:
+            # Find non-silent parts (threshold 0.01)
+            abs_audio = np.abs(audio)
+            threshold = 0.01
+            non_silent = abs_audio > threshold
+
+            if np.any(non_silent):
+                # Find first and last non-silent samples
+                indices = np.where(non_silent)[0]
+                start_idx = max(0, indices[0] - int(sr * 0.1))  # Keep 100ms before speech
+                end_idx = min(len(audio), indices[-1] + int(sr * 0.1))  # Keep 100ms after speech
+                audio = audio[start_idx:end_idx]
+                logger.info(f"Trimmed silence: {start_idx} to {end_idx}")
+        except Exception as e:
+            logger.warning(f"Silence removal failed: {e}")
+
+        # 3. Volume normalization - aggressive boost
+        rms = np.sqrt(np.mean(audio**2))
+        if rms > 0:
+            # Target RMS of 0.5 (iFlytek likes moderate volume)
+            target_rms = 0.5
+            # Apply gain, capped at 15x
+            gain = min(target_rms / rms, 15.0)
+            audio = audio * gain
+            # Soft clip to prevent harsh clipping
+            audio = np.tanh(audio)
+            logger.info(f"Applied gain: {gain:.2f}x")
+
+        # 4. Ensure 16kHz sample rate
+        if sr != 16000:
+            import librosa
+            audio = librosa.resample(audio, orig_sr=sr, target_sr=16000)
+            sr = 16000
+            logger.info("Resampled to 16kHz")
+
+        # Calculate RMS AFTER
+        rms_after = np.sqrt(np.mean(audio**2))
+        max_after = np.max(np.abs(audio))
+        duration_after = len(audio) / sr
+        logger.info(f"RMS after: {rms_after:.4f}, max: {max_after:.4f}, duration: {duration_after:.2f}s")
+
+        # Save enhanced audio
+        sf.write(audio_path, audio, sr)
+        logger.info(f"Audio enhanced successfully")
+
+        return audio_path
+
+    except Exception as e:
+        logger.error(f"Audio enhancement failed: {e}", exc_info=True)
+        return audio_path
+
+
+def check_audio_quality(audio_path: str) -> dict:
+    """
+    Check audio quality metrics
+    Returns dict with quality metrics and warnings
+    """
+    import soundfile as sf
+    import numpy as np
+
+    try:
+        audio, sr = sf.read(audio_path)
+
+        # Convert stereo to mono if needed
+        if len(audio.shape) > 1:
+            audio = np.mean(audio, axis=1)
+
+        duration = len(audio) / sr
+
+        # Calculate metrics
+        rms = np.sqrt(np.mean(audio**2))
+        max_val = np.max(np.abs(audio))
+
+        # Calculate signal-to-noise ratio (simplified)
+        # Use quiet parts as noise estimate
+        sorted_audio = np.sort(np.abs(audio))
+        noise_estimate = np.mean(sorted_audio[:int(len(sorted_audio) * 0.1)])
+        if noise_estimate > 0:
+            snr = 20 * np.log10(rms / noise_estimate) if noise_estimate > 0 else 0
+        else:
+            snr = 100  # Very clean audio
+
+        # Check for silence (too quiet)
+        is_too_quiet = rms < 0.01
+        # Check for clipping (too loud)
+        is_clipping = max_val >= 0.99
+        # Check for very short audio
+        is_too_short = duration < 1.0
+        # Check for low SNR
+        is_low_snr = snr < 10
+
+        result = {
+            'duration': round(duration, 2),
+            'rms': round(rms, 4),
+            'max': round(max_val, 4),
+            'snr': round(snr, 2),
+            'warnings': []
+        }
+
+        if is_too_quiet:
+            result['warnings'].append('Audio is too quiet - speak louder')
+        if is_clipping:
+            result['warnings'].append('Audio may be clipping - speak at normal volume')
+        if is_too_short:
+            result['warnings'].append('Audio is very short')
+        if is_low_snr:
+            result['warnings'].append('High background noise - record in quieter environment')
+
+        logger.info(f"Audio quality check: {result}")
+        return result
+
+    except Exception as e:
+        logger.warning(f"Audio quality check failed: {e}")
+        return {'warnings': [], 'error': str(e)}
+
 
 class AudioPreprocessor:
     """Audio preprocessing for iFlytek ISE"""
@@ -39,16 +197,27 @@ class AudioPreprocessor:
             return None
         
         self.downloaded_file = downloaded
-        
+
         # Step 2: Convert to PCM 16kHz mono
         logger.info("Converting to PCM 16kHz mono...")
         converted = self._convert_audio(downloaded)
         if not converted:
             logger.error("Failed to convert audio")
             return None
-        
+
         self.converted_file = converted
-        
+
+        # Step 2.5: Enhance audio (noise reduction, normalization)
+        logger.info("Enhancing audio quality...")
+        try:
+            enhanced = enhance_audio(converted)
+            if not enhanced:
+                logger.warning("Audio enhancement returned None, using original")
+            else:
+                logger.info(f"Audio enhanced successfully: {enhanced}")
+        except Exception as e:
+            logger.warning(f"Audio enhancement error: {e}, using original")
+
         # Step 3: Validate
         if not self._validate_audio(converted):
             logger.error("Converted audio validation failed")
@@ -176,8 +345,8 @@ class AudioPreprocessor:
                     logger.warning(f"Audio too short: {duration}s")
                     # Still return true, let iFlytek handle it
                 
-                # Must be less than 60 seconds
-                if duration > 60:
+                # Check max duration (0 = no limit)
+                if MAX_AUDIO_DURATION > 0 and duration > MAX_AUDIO_DURATION:
                     logger.warning(f"Audio too long: {duration}s")
                     return False
                     

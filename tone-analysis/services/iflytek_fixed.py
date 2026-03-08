@@ -187,10 +187,12 @@ class IflytekEvaluator:
         
         ws = websocket.WebSocketApp(ws_url, on_message=on_message, on_error=on_error, on_close=on_close)
         ws.on_open = on_open
-        ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
+        # ping_interval must be > ping_timeout for long audio
+        ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE}, ping_timeout=30, ping_interval=60)
         
-        # Wait for result (allow up to 4 min for long recordings / slow iFlytek)
-        timeout = 240
+        # Wait for result - configurable via environment variable (default 300 seconds / 5 minutes)
+        timeout = int(os.environ.get('IFLYTEK_TIMEOUT', 300))
+        logger.info(f"Waiting for iFlytek result (timeout: {timeout}s)...")
         start = time.time()
         while not result_ready and time.time() - start < timeout:
             time.sleep(0.1)

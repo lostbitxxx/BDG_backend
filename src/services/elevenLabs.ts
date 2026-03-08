@@ -12,7 +12,7 @@ const getVoiceId = (gender: 'male' | 'female' = 'female') => {
   if (gender === 'male') {
     return process.env.ELEVENLABS_VOICE_MALE || '4VZIsMPtgggwNg7OXbPY';
   }
-  return process.env.ELEVENLABS_VOICE_FEMALE || 'tOuLUAIdXShmWH7PEUrU';
+  return process.env.ELEVENLABS_VOICE_FEMALE || '9lHjugDhwqoxA5MhX0az';
 };
 
 interface TTSResponse {

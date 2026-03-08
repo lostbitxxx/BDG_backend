@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
+import { authenticateToken } from '../middleware/auth';
 
 const router = express.Router();
 
@@ -56,7 +57,7 @@ function loadPSCData() {
 }
 
 // POST /api/questions/generate
-router.post('/generate', async (req: Request, res: Response) => {
+router.post('/generate', authenticateToken, async (req: Request, res: Response) => {
   const { section, count = 10 } = req.body as {
     section: number;
     count?: number;

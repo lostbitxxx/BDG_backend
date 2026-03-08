@@ -9,11 +9,9 @@ const getAzureRegion = () => process.env.AZURE_SPEECH_REGION || 'southeastasia';
 
 // Voice names for Azure
 const VOICES: Record<string, string> = {
-  'bunny': 'zh-CN-XiaoxiaoNeural',      // Female - friendly
-  'cat': 'zh-CN-YunxiNeural',            // Male - witty  
-  'owl': 'zh-CN-YunyangNeural',          // Male - wise
-  'female': 'zh-CN-XiaoxiaoNeural',
-  'male': 'zh-CN-YunxiNeural',
+  'red-birdie': 'zh-CN-XiaoxiaoNeural',      // Female - friendly/cheerful
+  'foggy-birdie': 'zh-CN-YunxiNeural',       // Male - witty/clever
+  'final-birdie': 'zh-CN-YunyangNeural',     // Male - wise/calm
 };
 
 interface TTSResponse {
@@ -22,7 +20,7 @@ interface TTSResponse {
   error?: string;
 }
 
-export async function textToSpeech(text: string, character: string = 'bunny'): Promise<TTSResponse> {
+export async function textToSpeech(text: string, character: string = 'red-birdie'): Promise<TTSResponse> {
   try {
     const apiKey = getAzureKey();
     const region = getAzureRegion();
@@ -32,7 +30,7 @@ export async function textToSpeech(text: string, character: string = 'bunny'): P
       return { success: true, audioUrl: undefined };
     }
 
-    const voice = VOICES[character] || VOICES['bunny'];
+    const voice = VOICES[character] || VOICES['red-birdie'];
     console.log(`Azure TTS: using voice ${voice}`);
 
     const response = await axios({

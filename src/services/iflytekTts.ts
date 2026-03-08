@@ -11,9 +11,9 @@ const IFLYTEK_WS_URL = 'wss://tts-api-sg.xf-yun.com/v2/tts';
 
 // Voice parameters for different characters
 const VOICES: Record<string, { vcn: string; speed: number; pitch: number }> = {
-  'bunny': { vcn: 'x_xiaoyan', speed: 50, pitch: 50 },
-  'cat': { vcn: 'x_xiaolin', speed: 55, pitch: 55 },
-  'owl': { vcn: 'x_xiaoyang_story', speed: 45, pitch: 45 },
+  'red-birdie': { vcn: 'x_xiaoyan', speed: 50, pitch: 50 },
+  'foggy-birdie': { vcn: 'x_xiaolin', speed: 55, pitch: 55 },
+  'final-birdie': { vcn: 'x_xiaoyang_story', speed: 45, pitch: 45 },
 };
 
 function getAuthUrl(): string {
@@ -39,7 +39,7 @@ interface TTSResponse {
   error?: string;
 }
 
-export async function textToSpeech(text: string, character: string = 'bunny'): Promise<TTSResponse> {
+export async function textToSpeech(text: string, character: string = 'red-birdie'): Promise<TTSResponse> {
   return new Promise(async (resolve) => {
     try {
       const appId = getAppId();
@@ -51,7 +51,7 @@ export async function textToSpeech(text: string, character: string = 'bunny'): P
         return;
       }
 
-      const voice = VOICES[character] || VOICES['bunny'];
+      const voice = VOICES[character] || VOICES['red-birdie'];
       console.log(`iFlytek TTS: using voice ${voice.vcn} for ${character}`);
 
       const requestId = uuidv4().replace(/-/g, '');

@@ -73,34 +73,34 @@ router.get('/history', authenticateToken, async (req: Request, res: Response) =>
       return res.json({ success: true, history: [] });
     }
     const limit = Math.min(parseInt(String(req.query.limit), 10) || 50, 100);
+    // Simplified query without orderBy to avoid needing composite index
     const snapshot = await db
       .collection('users')
       .doc(uid)
       .collection('testHistory')
-      .orderBy('completedAt', 'desc')
       .limit(limit)
       .get();
-    const history = snapshot.docs.map((doc) => {
-      const data = doc.data();
-      // Ensure numeric fields are never null so frontend can safely use .toFixed()
-      const totalScore = data.totalScore != null ? Number(data.totalScore) : 0;
-      const testGPA = data.testGPA != null ? Number(data.testGPA) : 0;
-      return {
-        id: doc.id,
-        sessionId: data.sessionId,
-        type: data.type,
-        partialSection: data.partialSection ?? undefined,
-        completedAt: data.completedAt?.toDate?.()?.toISOString?.() ?? data.completedAt,
-        totalScore,
-        testGPA,
-        level: data.level ?? '',
-        grade: data.grade ?? '',
-        pass: data.pass ?? false,
-        sectionGrades: data.sectionGrades ?? undefined,
-        sectionGPAs: data.sectionGPAs ?? undefined,
-        completedSections: data.completedSections ?? [],
-      };
-    });
+    // Sort in memory by completedAt
+    const history = snapshot.docs
+      .map((doc) => {
+        const data = doc.data();
+        // Ensure numeric fields are never null so frontend can safely use .toFixed()
+        const totalScore = data.totalScore != null ? Number(data.totalScore) : 0;
+        const testGPA = data.testGPA != null ? Number(data.testGPA) : 0;
+        const completedAt = data.completedAt?.toDate?.()?.toISOString?.() ?? data.completedAt;
+        return {
+          id: doc.id,
+          sessionId: data.sessionId,
+          type: data.type,
+          partialSection: data.partialSection ?? undefined,
+          completedAt,
+          totalScore,
+          testGPA,
+          _sortDate: new Date(completedAt).getTime() || 0,
+        };
+      })
+      .sort((a, b) => b._sortDate - a._sortDate)
+      .map(({ _sortDate, ...rest }) => rest);
     res.json({ success: true, history });
   } catch (error) {
     console.error('Error fetching test history:', error);
@@ -109,7 +109,7 @@ router.get('/history', authenticateToken, async (req: Request, res: Response) =>
 });
 
 // POST /api/test/start - Start a new test session
-router.post('/start', async (req: Request, res: Response) => {
+router.post('/start', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { type, section } = req.body;
 
@@ -159,7 +159,7 @@ router.post('/start', async (req: Request, res: Response) => {
 });
 
 // GET /api/test/:sessionId - Get test session status
-router.get('/:sessionId', (req: Request, res: Response) => {
+router.get('/:sessionId', authenticateToken, (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
     const session = sessions.get(sessionId);
@@ -186,7 +186,7 @@ router.get('/:sessionId', (req: Request, res: Response) => {
 });
 
 // POST /api/test/:sessionId/submit/:section - Submit a section
-router.post('/:sessionId/submit/:section', (req: Request, res: Response) => {
+router.post('/:sessionId/submit/:section', authenticateToken, (req: Request, res: Response) => {
   try {
     const { sessionId, section } = req.params;
     const { response, duration } = req.body;
@@ -302,7 +302,7 @@ router.post('/:sessionId/complete', optionalAuth, async (req: Request, res: Resp
 });
 
 // GET /api/test/:sessionId/result - Get final result
-router.get('/:sessionId/result', (req: Request, res: Response) => {
+router.get('/:sessionId/result', authenticateToken, (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
 
@@ -340,7 +340,7 @@ router.get('/:sessionId/result', (req: Request, res: Response) => {
 });
 
 // GET /api/test/questions/:section - Get questions for a specific section (no session)
-router.get('/questions/:section', (req: Request, res: Response) => {
+router.get('/questions/:section', authenticateToken, (req: Request, res: Response) => {
   try {
     const { section } = req.params;
     const { count } = req.query;
