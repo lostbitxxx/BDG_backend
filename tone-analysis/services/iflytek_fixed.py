@@ -169,9 +169,19 @@ class IflytekEvaluator:
                         
                         time.sleep(0.04)
                     
-                    logger.info("All audio sent, closing...")
-                    time.sleep(1)
-                    ws.close()
+                    logger.info("All audio sent, waiting for result...")
+                    # Wait for result - iFlytek needs time to process
+                    # Don't close immediately - wait for status 2
+                    max_wait_after_audio = 60  # Wait up to 60 seconds for result after sending all chunks
+                    wait_start = time.time()
+                    while not result_ready and time.time() - wait_start < max_wait_after_audio:
+                        time.sleep(0.5)
+                        logger.info(f"Waiting for result... (status check)")
+
+                    if not result_ready:
+                        logger.warning("No result received after all audio sent, closing connection")
+                    else:
+                        logger.info("Result received, closing connection")
                     
                 except Exception as e:
                     logger.error(f"Send error: {e}")
@@ -191,15 +201,16 @@ class IflytekEvaluator:
         ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE}, ping_timeout=30, ping_interval=60)
         
         # Wait for result - configurable via environment variable (default 300 seconds / 5 minutes)
+        # Note: We now also wait inside the run() thread after sending all audio
         timeout = int(os.environ.get('IFLYTEK_TIMEOUT', 300))
         logger.info(f"Waiting for iFlytek result (timeout: {timeout}s)...")
         start = time.time()
         while not result_ready and time.time() - start < timeout:
-            time.sleep(0.1)
+            time.sleep(0.2)
 
         if not result_ready:
             logger.error("Timeout waiting for result")
-            result = {'success': False, 'error': 'Timeout'}
+            result = {'success': False, 'error': 'Timeout - iFlytek took too long to process audio'}
         
         return result
     

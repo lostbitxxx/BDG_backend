@@ -33,7 +33,7 @@ app = Flask(__name__)
 CORS(app)
 
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
-app.config['TIMEOUT'] = 180
+app.config['TIMEOUT'] = 360  # 6 minutes - enough for 5 min recording + processing
 
 _iflytek_evaluator = None
 _elevenlabs_transcriber = None

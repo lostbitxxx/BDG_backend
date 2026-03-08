@@ -74,7 +74,7 @@ export const SECTION_CONFIG = {
   4: {
     name: '朗讀短文',
     nameEn: 'Reading Passage',
-    timeLimit: 240, // 4 minutes
+    timeLimit: 300, // 5 minutes
     maxScore: 30,
     passageLength: 400, // characters
     timeoutPenalty: 1,
