@@ -13,8 +13,8 @@ import time
 import struct
 import math
 
-# Load only local .env (not parent)
-load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
+# Load only local .env (not parent) – use abspath so it works regardless of cwd
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
 from services.audio_preprocessor import AudioPreprocessor, check_audio_quality
 from services.iflytek_fixed import IflytekEvaluator
