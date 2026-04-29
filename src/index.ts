@@ -15,18 +15,22 @@ dotenv.config();
 const app = express();
 const httpServer = createServer(app);
 
+const corsOptions = {
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
 // Socket.IO setup
 const io = new Server(httpServer, {
-  cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-    methods: ['GET', 'POST'],
-  },
+  cors: corsOptions
 });
 
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions)); 
 
 // Body parser - skip for multipart to let multer handle it
 app.use((req, res, next) => {
